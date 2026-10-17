@@ -5,6 +5,15 @@
 # * date Author's Name <author's email> version-release
 # - Summary of changes
 
+* Sat Oct 17 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.5.0-1
+- Log in through the 9GAG app API, the website login is blocked by Cloudflare
+- Log in with email or username; optional "Stay logged in" renews the session
+- Keep the login across app restarts
+- Show the logged in user in the app settings
+- Fall back to a guest session when the login expires and say so
+- Report errors while loading posts instead of loading forever
+- Hide the vote buttons, voting isn't possible through the app API yet
+
 * Wed May 22 2019 Alexander Seibel <Alex217@t-online.de> 1.4.2-1
 - Fix the loading of posts
 

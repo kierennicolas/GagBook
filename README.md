@@ -31,6 +31,7 @@ Since version 1.5.0 GagBook logs in through the 9GAG app API (`api.9gag.com/v2/u
 
 - Only email/username and password logins work. Accounts that only sign in with Facebook, Google or Apple can't log in.
 - The app stores the session token, not your password. With "Stay logged in" switched on, it also stores your login name and the MD5 hash of your password that the API expects, so it can renew the session when the token expires. Logging out removes both.
+- Voting is switched off for now. The old `9gag.com/vote` endpoint is behind the same Cloudflare challenge, and the vote call of the app API isn't publicly known.
 - The API is undocumented, so 9GAG can change or close it at any time.
 
 I will update GagBook to fix bugs and implement new features.

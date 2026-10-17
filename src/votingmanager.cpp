@@ -49,6 +49,12 @@ bool VotingManager::isBusy() const
     return m_isBusy;
 }
 
+bool VotingManager::isAvailable() const
+{
+    // TODO: switch to the app API once its vote endpoint is known
+    return false;
+}
+
 GagBookManager *VotingManager::manager() const
 {
     return m_manager;
@@ -62,6 +68,11 @@ void VotingManager::setManager(GagBookManager *manager)
 void VotingManager::vote(const QString &id, VotingManager::VoteType voteType)
 {
     Q_ASSERT(m_manager != 0);
+
+    if (!isAvailable()) {
+        emit failure("Voting isn't available in this version of GagBook.");
+        return;
+    }
 
     if (m_reply != 0) {
         m_reply->disconnect();

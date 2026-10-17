@@ -322,6 +322,7 @@ Item {
             spacing: constant.paddingMedium
 
             IconButton {
+                visible: votingManager.available
                 enabled: appSettings.loggedIn && !votingManager.busy
                 icon.height: Theme.iconSizeMedium; icon.width: Theme.iconSizeMedium
                 icon.source: "image://theme/icon-m-up"
@@ -329,6 +330,7 @@ Item {
                 onClicked: votingManager.vote(model.id, highlighted ? VotingManager.Unlike : VotingManager.Like);
             }
             IconButton {
+                visible: votingManager.available
                 enabled: appSettings.loggedIn && !votingManager.busy
                 icon.height: Theme.iconSizeMedium; icon.width: Theme.iconSizeMedium
                 icon.source: "image://theme/icon-m-down"

@@ -46,6 +46,11 @@ class VotingManager : public QObject
     /*! Set the global instance of GagBookManager. Must be set before component completed
         and can not be change afterward */
     Q_PROPERTY(GagBookManager *manager READ manager WRITE setManager)
+
+    /*! False while voting can't be sent: the old 9gag.com/vote endpoint is behind a
+        Cloudflare challenge and needed website cookies, and the vote call of the app API
+        (api.9gag.com) is not known yet. The UI hides the vote buttons while false. */
+    Q_PROPERTY(bool available READ isAvailable CONSTANT)
 public:
     explicit VotingManager(QObject *parent = 0);
 
@@ -58,6 +63,7 @@ public:
     Q_ENUM(VoteType)
 
     bool isBusy() const;
+    bool isAvailable() const;
 
     GagBookManager *manager() const;
     void setManager(GagBookManager *manager);
