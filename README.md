@@ -36,6 +36,14 @@ Since version 1.5.0 GagBook logs in through the 9GAG app API (`api.9gag.com/v2/u
 
 I will update GagBook to fix bugs and implement new features.
 
+### Building
+
+The GitHub Actions workflow in `.github/workflows/build-sailfish.yml` builds an armv7hl RPM for Sailfish OS 5.1.0.11 (Sony Xperia XA2, Xperia 10 and other 32-bit devices) on every push. Run it from the Actions tab to pick another SDK release. The RPM is attached to the run as an artifact.
+
+To build locally with the Sailfish SDK, run `sfdk build` (or `mb2 -t SailfishOS-5.1.0.11-armv7hl build`) inside the `sailfish/` folder.
+
+To install on the phone, allow untrusted software (Settings → Untrusted software) and open the RPM, or with developer mode on run `devel-su pkcon install-local harbour-gagbook-*.armv7hl.rpm`.
+
 ## Contacts
 
 - **Me**: Alex217@t-online.de
