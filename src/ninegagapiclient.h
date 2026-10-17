@@ -119,6 +119,14 @@ private:
 
     typedef QList<QPair<QString, QString> > ArgList;
 
+    // what answered a session request, for error messages and the log
+    struct ResponseInfo {
+        QString server;
+        QString contentType;
+        QString cfMitigated;
+        QString cfRay;
+    };
+
     static qint64 currentSecs();
     static QByteArray getTimestamp();
     static QByteArray createSHA1();
@@ -133,7 +141,7 @@ private:
     bool canRenewUserSession() const;
     void startSessionRequest(SessionRequestType type);
     void finishSessionRequest(SessionRequestType type, int httpStatus, int networkError,
-                              const QByteArray &body, bool timedOut);
+                              const QByteArray &body, bool timedOut, const ResponseInfo &info);
     bool abortSessionRequest();
     void setSession(const QByteArray &token, qint64 expiry, bool guest);
     void clearUserSession(bool clearStoredLogin);

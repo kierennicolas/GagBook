@@ -80,6 +80,12 @@ const QByteArray DEVICE_TYPE = "android";
 const QByteArray BUCKET_NAME = "MAIN_RELEASE";   // "__DEFAULT__";
 const QByteArray COMMENT_ID_CDN = "a_dd8f2b7d304a10edaf6f29517ea0ca4100a43d1b";
 
+// The official app (8.24.7, Oct 2026) identifies itself as '9GAG/<versionCode> (<device>;Android <n>)'
+// together with 'X-Package-Version'. With Qt's default User-Agent ("Mozilla/5.0") the login got
+// HTTP 403 (Oct 2026), most likely from 9GAG's firewall treating it as a bot.
+const QByteArray APP_VERSION_CODE = "80240700";
+const QByteArray APP_USER_AGENT = "9GAG/" + APP_VERSION_CODE + " (Jolla Sailfish OS;Android 10)";
+
 // Characters that may stay unencoded inside a path segment (RFC 3986 'pchar'), so that
 // e.g. an email address or a comma separated id list is sent the way the Android app sends it.
 const QByteArray PATH_SEGMENT_SAFE_CHARS = "@,+=:!$&'()*;";
@@ -250,6 +256,8 @@ QNetworkRequest NineGagApiClient::apiRequest(const QUrl &url, const QByteArray &
     netReq.setRawHeader("X-Device-UUID", m_deviceUUID);
     netReq.setRawHeader("9GAG-DEVICE_TYPE", DEVICE_TYPE);
     netReq.setRawHeader("9GAG-BUCKET_NAME", BUCKET_NAME);
+    netReq.setRawHeader("User-Agent", APP_USER_AGENT);
+    netReq.setRawHeader("X-Package-Version", APP_VERSION_CODE);
     netReq.setRawHeader("9GAG-REQUEST-SIGNATURE", createRequestSig(timestamp));
 
     // never answer API requests from the disk cache
@@ -442,9 +450,15 @@ void NineGagApiClient::onSessionReplyFinished()
     const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const int networkError = reply->error();
     const QByteArray body = reply->readAll();
+
+    ResponseInfo info;
+    info.server = QString::fromLatin1(reply->rawHeader("Server"));
+    info.contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+    info.cfMitigated = QString::fromLatin1(reply->rawHeader("cf-mitigated"));
+    info.cfRay = QString::fromLatin1(reply->rawHeader("CF-RAY"));
     reply->deleteLater();
 
-    finishSessionRequest(m_sessionRequestType, httpStatus, networkError, body, false);
+    finishSessionRequest(m_sessionRequestType, httpStatus, networkError, body, false, info);
 }
 
 void NineGagApiClient::onSessionTimeout()
@@ -458,7 +472,8 @@ void NineGagApiClient::onSessionTimeout()
     reply->abort();
     reply->deleteLater();
 
-    finishSessionRequest(m_sessionRequestType, 0, QNetworkReply::TimeoutError, QByteArray(), true);
+    finishSessionRequest(m_sessionRequestType, 0, QNetworkReply::TimeoutError, QByteArray(), true,
+                         ResponseInfo());
 }
 
 /*!
@@ -469,7 +484,7 @@ void NineGagApiClient::onSessionTimeout()
  * treated as temporary, so a stored login is kept.
  */
 void NineGagApiClient::finishSessionRequest(SessionRequestType type, int httpStatus, int networkError,
-                                            const QByteArray &body, bool timedOut)
+                                            const QByteArray &body, bool timedOut, const ResponseInfo &info)
 {
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
@@ -498,12 +513,29 @@ void NineGagApiClient::finishSessionRequest(SessionRequestType type, int httpSta
         message = QStringLiteral("9GAG is limiting requests right now. Try again in a few minutes.");
     else if (httpStatus >= 500)
         message = QStringLiteral("9GAG's server has a problem (HTTP %1). Try again later.").arg(httpStatus);
+    else if (!isJson && (!info.cfMitigated.isEmpty()
+                         || info.server.contains(QLatin1String("cloudflare"), Qt::CaseInsensitive)))
+        message = QStringLiteral("9GAG's firewall blocked the request (HTTP %1%2).")
+                .arg(httpStatus)
+                .arg(info.cfMitigated.isEmpty() ? QString() : QStringLiteral(", ") + info.cfMitigated);
     else
         message = QStringLiteral("9GAG sent an unexpected answer (HTTP %1). Try again later.").arg(httpStatus);
 
-    if (!success)
+    if (!success) {
+        // The body never contains the request URL in practice, but redact the hash anyway.
+        QByteArray snippet = body.left(300);
+        if (!m_passwordHash.isEmpty())
+            snippet.replace(m_passwordHash, "<password-hash>");
+        if (!m_loginName.isEmpty())
+            snippet.replace(m_loginName.toUtf8(), "<login-name>");
+        snippet.replace('\n', ' ').replace('\r', ' ');
+
         qWarning() << "NineGagApiClient: session request failed, type" << type << "HTTP" << httpStatus
                    << "network error" << networkError << "-" << message;
+        qWarning() << "NineGagApiClient: answer: server" << info.server << "content-type" << info.contentType
+                   << "cf-mitigated" << info.cfMitigated << "cf-ray" << info.cfRay
+                   << "body" << snippet;
+    }
 
     switch (type) {
     case GuestRequest:

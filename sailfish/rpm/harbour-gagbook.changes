@@ -5,6 +5,10 @@
 # * date Author's Name <author's email> version-release
 # - Summary of changes
 
+* Sat Oct 17 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.5.1-1
+- Identify as the 9GAG app (User-Agent, X-Package-Version), the login got HTTP 403
+- Say when 9GAG's firewall blocks a request, and log what answered
+
 * Sat Oct 17 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.5.0-1
 - Log in through the 9GAG app API, the website login is blocked by Cloudflare
 - Log in with email or username; optional "Stay logged in" renews the session
