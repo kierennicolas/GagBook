@@ -42,8 +42,10 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: Build on SailfishOS-${{ env.RELEASE }}-${{ env.ARCH }}
+        shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
+          exec > >(tee build.log) 2>&1
           # The image runs as 'mersdk', so build in a copy of the checkout and make the
           # output folder writable for that user.
           mkdir -p output && chmod a+w output
@@ -58,6 +60,21 @@ jobs:
           ' build-gagbook "$RELEASE" "$ARCH"
           ls -l output
           ls output/harbour-gagbook-[0-9]*."$ARCH".rpm
+
+      # Put the end of the build log into the run summary and an annotation, so a failure
+      # can be read without downloading the full log.
+      - name: Show why the build failed
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo '### Build failed, last 60 lines of the log'
+            echo '```'
+            tail -n 60 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          msg=$(tail -n 60 build.log | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build failed::${msg}"
 
       - name: Upload the RPM
         uses: actions/upload-artifact@v4
