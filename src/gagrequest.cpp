@@ -68,8 +68,14 @@ void GagRequest::initiateGagsRequest()
  */
 void GagRequest::fetchGags(int groupId, QString &section, QString &lastId)
 {
-    // TODO catch the corner case where the request is still active (if the finished slot has not been called yet)
-    Q_ASSERT(m_gagsReply == 0);
+    // a newer request replaces one that is still running (e.g. a refresh after logging in)
+    if (m_gagsReply != 0) {
+        qDebug() << "GagRequest::fetchGags(): Aborting the previous request.";
+        m_gagsReply->disconnect(this);
+        m_gagsReply->abort();
+        m_gagsReply->deleteLater();
+        m_gagsReply = 0;
+    }
 
     m_gagsReply = fetchGagsImpl(groupId, section, lastId);
 
@@ -124,11 +130,14 @@ void GagRequest::onFetchGagsFinished()
     if (m_gagsReply->error()) {
         qDebug() << "QNetworkReply error: " << m_gagsReply->error()
                  << "\nQNetworkReply object: " << m_gagsReply->readAll();
-        QString errorStr = m_gagsReply->errorString();
-        m_gagsReply->disconnect();
-        m_gagsReply->deleteLater();
+        QNetworkReply *reply = m_gagsReply;
+        QString errorStr = reply->errorString();
+        reply->disconnect();
+        reply->deleteLater();
         m_gagsReply = 0;
-        emit fetchGagsFailure(errorStr);
+
+        if (!retryAfterGagsError(reply))
+            emit fetchGagsFailure(errorStr);
         return;
     }
 
@@ -175,6 +184,15 @@ void GagRequest::onFetchCommentsFinished(CommentObject *parentComment)
     const QList<CommentObject *> &commentList = parseComments(response, parentComment);
 
     emit fetchCommentsSuccess(commentList);
+}
+
+/*!
+ * \brief GagRequest::retryAfterGagsError Default implementation, does not retry.
+ */
+bool GagRequest::retryAfterGagsError(QNetworkReply *reply)
+{
+    Q_UNUSED(reply);
+    return false;
 }
 
 /*!

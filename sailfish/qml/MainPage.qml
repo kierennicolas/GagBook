@@ -165,6 +165,12 @@ Page {
         onFailure: infoBanner.alert(errorMessage);
     }
 
+    // reload the posts with the new session, so votes and sensitive posts match the account
+    Connections {
+        target: appSettings
+        onLoggedInChanged: gagModel.refresh(GagModel.RefreshAll)
+    }
+
     Connections {
         target: volumeKeyListener
         onVolumeUpClicked: {

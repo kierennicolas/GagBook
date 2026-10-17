@@ -34,14 +34,14 @@
 #include "gagrequest.h"
 
 class NetworkManager;
+class NineGagApiClient;
 class AppSettings;
-class QNetworkReply;
 
 /*! Handle login and hold other global instance class
 
     A single global instance class that hold and expose other global instance
-    classes (AppSettings and NetworkManager) so they can be easily accessible
-    by other classes that need them. Also handle 9GAG account login.
+    classes (AppSettings, NetworkManager and NineGagApiClient) so they can be easily
+    accessible by other classes that need them. Also handle 9GAG account login.
  */
 class GagBookManager : public QObject
 {
@@ -58,11 +58,15 @@ class GagBookManager : public QObject
         can not be change afterward. */
     Q_PROPERTY(AppSettings *settings READ settings WRITE setSettings)
 
+    /*! The 9GAG user name of the logged in user, empty if not logged in. */
+    Q_PROPERTY(QString userName READ userName NOTIFY userNameChanged)
+
 public:
     explicit GagBookManager(QObject *parent = 0);
 
     bool isBusy() const;
     QString downloadCounter() const;
+    QString userName() const;
 
     /*! Get the global instance of AppSettings. */
     AppSettings *settings() const;
@@ -71,9 +75,13 @@ public:
     /*! Get the global instance of NetworkManager. */
     NetworkManager *networkManager() const;
 
-    /*! Login to 9GAG account. If login success, loginSuccess() will emit, otherwise
-        loginFailure() will emit. */
-    Q_INVOKABLE void login(const QString &username, const QString &password);
+    /*! Get the global instance of NineGagApiClient. */
+    NineGagApiClient *apiClient() const;
+
+    /*! Login to 9GAG account with an email address (or user name) and password. If
+        \p rememberLogin is true, the session is renewed automatically when it expires.
+        If login success, loginSuccess() will emit, otherwise loginFailure() will emit. */
+    Q_INVOKABLE void login(const QString &username, const QString &password, bool rememberLogin = false);
 
     /*! Logout from 9GAG account. */
     Q_INVOKABLE void logout();
@@ -82,10 +90,13 @@ public:
 
 private:
     void initGagRequest();
+    void setBusy(bool busy);
+    void syncLoginState();
 
 signals:
     void busyChanged();
     void downloadCounterChanged();
+    void userNameChanged();
 
     /*! Emit when login is succeeded. */
     void loginSuccess();
@@ -94,14 +105,19 @@ signals:
         failure and should show to user. */
     void loginFailure(const QString &errorMessage);
 
+    /*! Emit when the login ended without the user logging out (e.g. it expired).
+        \p message should show to user. */
+    void sessionExpired(const QString &message);
+
 private slots:
-    void onLoginFinished();
+    void onUserLoginFinished(bool success, const QString &errorMessage);
+    void onUserSessionEnded(const QString &message);
 
 private:
     bool m_isBusy;
     AppSettings *m_settings;
     NetworkManager *m_netManager;
-    QNetworkReply *m_loginReply;
+    NineGagApiClient *m_apiClient;
     GagRequest *m_gagRequest;
 };
 

@@ -100,6 +100,12 @@ protected:
      *  \p response This is the content of the network reply. */
     virtual QList<GagObject> parseGags(const QByteArray &response) = 0;
 
+    /*! Reimplement this to recover from a failed gags request, e.g. by renewing a session
+     *  and sending the request again. Return true if the failure has been handled, then
+     *  fetchGagsFailure() will not be emitted. The default implementation returns false.
+     *  \p reply The failed network reply (it is deleted afterwards). */
+    virtual bool retryAfterGagsError(QNetworkReply *reply);
+
     /*! Implement this to initiate a network request to retrieve the comments data.
      *  \p data Contains all the parameters that are needed for the implementing
      *  class to retrieve the comments. */

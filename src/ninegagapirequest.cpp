@@ -51,54 +51,51 @@
 /*!
  * \brief NineGagApiRequest::NineGagApiRequest Constructor.
  * \param networkManager Pointer to the global NetworkManager instance.
+ * \param apiClient Pointer to the global NineGagApiClient instance, which owns the session.
  * \param parent The parent object.
  */
-NineGagApiRequest::NineGagApiRequest(NetworkManager *networkManager, QObject *parent)
-    : GagRequest(networkManager, parent),
-      m_apiClient(new NineGagApiClient(this->networkManager(), this))
+NineGagApiRequest::NineGagApiRequest(NetworkManager *networkManager, NineGagApiClient *apiClient,
+                                     QObject *parent)
+    : GagRequest(networkManager, parent), m_apiClient(apiClient), m_waitingForSession(false),
+      m_retriedAfterAuthError(false)
 {
-    connect(m_apiClient, SIGNAL(loggedIn()), this, SLOT(onLogin()), Qt::UniqueConnection);
-    m_loginOngoing = true;
+    Q_ASSERT(m_apiClient != 0);
 
-    // ToDo: retrieve login data via QML
-    //m_apiClient->login(this->networkManager(), false, "username", "password");
-
-    m_apiClient->login(true);
-}
-
-/*!
- * \brief NineGagApiRequest::~NineGagApiRequest Destructor.
- */
-NineGagApiRequest::~NineGagApiRequest()
-{
-    m_apiClient->deleteLater();
+    connect(m_apiClient, &NineGagApiClient::sessionReady, this, &NineGagApiRequest::onSessionReady);
+    connect(m_apiClient, &NineGagApiClient::sessionFailed, this, &NineGagApiRequest::onSessionFailed);
 }
 
 /*!
  * \brief NineGagApiRequest::startGagsRequest Reimplementation to initiate the request for
- *  fetching the gags.
+ *  fetching the gags. Requests a (guest or renewed user) session first if needed.
  */
 void NineGagApiRequest::startGagsRequest()
 {
-    if (!m_loginOngoing) {
-
-        // check if a re-login is required
-        if (m_apiClient->sessionIsValid()) {
-            emit readyToRequestGags();
-        }
-        else {
-            qDebug() << "Performing a re-login...";
-
-            // perform a re-login according to previous state
-            if (m_apiClient->isGuestSession()) {
-                m_loginOngoing = true;
-                m_apiClient->login(true);
-            }
-            else {
-                // ToDo: perform a user login
-            }
-        }
+    if (m_apiClient->sessionIsValid()) {
+        emit readyToRequestGags();
+        return;
     }
+
+    m_waitingForSession = true;
+    m_apiClient->requestSession();
+}
+
+/*!
+ * \brief NineGagApiRequest::retryAfterGagsError Reimplementation to recover from a rejected token.
+ *  On HTTP 401 the session is dropped and the request is sent once more with a new session.
+ */
+bool NineGagApiRequest::retryAfterGagsError(QNetworkReply *reply)
+{
+    const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    if (httpStatus != 401 || m_retriedAfterAuthError)
+        return false;
+
+    qDebug() << "The API rejected the session token, requesting a new session...";
+    m_retriedAfterAuthError = true;
+    m_apiClient->invalidateSession();
+    startGagsRequest();
+    return true;
 }
 
 /*!
@@ -127,9 +124,11 @@ QList<GagObject> NineGagApiRequest::parseGags(const QByteArray &response)
     QJsonArray postsArr = rootObj.value("data").toObject().value("posts").toArray();
     const QVariantList postsList = postsArr.toVariantList();
 
+    m_retriedAfterAuthError = false;
+
     if (postsList.isEmpty()) {
         qWarning("Empty JSON API response!");
-        qDebug() << "### API response is: ###\n" << response;
+        qDebug() << "### API response is: ###\n" << response.left(1000);
 
         /* if reached end of the list and there are no further posts
          * (e.g. possible inside 'Fresh' section) */
@@ -137,6 +136,12 @@ QList<GagObject> NineGagApiRequest::parseGags(const QByteArray &response)
         {
             qDebug() << "Reached end of the list. There are no further posts to fetch.";
             emit reachedEndOfList();
+        }
+        else {
+            QString errorMessage = NineGagApiClient::apiErrorMessage(rootObj);
+            if (errorMessage.isEmpty())
+                errorMessage = QStringLiteral("9GAG sent no posts. Try refreshing.");
+            emit fetchGagsFailure(errorMessage);
         }
     }
 
@@ -315,12 +320,26 @@ QList<CommentObject *> NineGagApiRequest::parseComments(const QByteArray &respon
 }
 
 /*!
- * \brief NineGagApiRequest::onLogin Slot to process a successful login.
+ * \brief NineGagApiRequest::onSessionReady Slot to continue a gags request once the
+ *  API client has a session.
  */
-void NineGagApiRequest::onLogin()
+void NineGagApiRequest::onSessionReady()
 {
-    m_loginOngoing = false;
-    emit readyToRequestGags();
+    if (m_waitingForSession) {
+        m_waitingForSession = false;
+        emit readyToRequestGags();
+    }
+}
+
+/*!
+ * \brief NineGagApiRequest::onSessionFailed Slot to report a failed session request.
+ */
+void NineGagApiRequest::onSessionFailed(const QString &errorMessage)
+{
+    if (m_waitingForSession) {
+        m_waitingForSession = false;
+        emit fetchGagsFailure(errorMessage);
+    }
 }
 
 /*!

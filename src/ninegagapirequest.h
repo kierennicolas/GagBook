@@ -40,22 +40,25 @@ class NineGagApiRequest : public GagRequest
     Q_OBJECT
 
 public:
-    explicit NineGagApiRequest(NetworkManager *networkManager, QObject *parent = 0);
-    ~NineGagApiRequest();
+    /*! \p apiClient is owned by the caller and must outlive this object. */
+    NineGagApiRequest(NetworkManager *networkManager, NineGagApiClient *apiClient, QObject *parent = 0);
 
 protected:
     void startGagsRequest();
     QNetworkReply *fetchGagsImpl(const int groupId, const QString &section, const QString &lastId);
     QList<GagObject> parseGags(const QByteArray &response);
+    bool retryAfterGagsError(QNetworkReply *reply);
     QNetworkReply *fetchCommentsImpl(const QVariantList &data);
     QList<CommentObject *> parseComments(const QByteArray &response, CommentObject *parentComment);
 
 private slots:
-    void onLogin();
+    void onSessionReady();
+    void onSessionFailed(const QString &errorMessage);
 
 private:
     NineGagApiClient *m_apiClient;
-    bool m_loginOngoing;
+    bool m_waitingForSession;
+    bool m_retriedAfterAuthError;
 
     QList<CommentObject *> parseChildComments(const QJsonArray &jsonCommentsArray,
                                               CommentObject *parentComment);

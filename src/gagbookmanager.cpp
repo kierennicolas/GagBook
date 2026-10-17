@@ -28,23 +28,22 @@
 
 #include "gagbookmanager.h"
 
-#include <QtNetwork/QNetworkCookieJar>
-#include <QtNetwork/QNetworkCookie>
-#include <QtNetwork/QNetworkReply>
-#include <QtCore/QUrlQuery>
-#include <QtCore/QDateTime>
-
 #include "networkmanager.h"
 #include "gagimagedownloader.h"
 #include "appsettings.h"
+#include "ninegagapiclient.h"
 #include "ninegagapirequest.h"
 
 GagBookManager::GagBookManager(QObject *parent) :
     QObject(parent), m_isBusy(false), m_settings(0),
-    m_netManager(new NetworkManager(this)), m_loginReply(0), m_gagRequest(0)
+    m_netManager(new NetworkManager(this)), m_apiClient(0), m_gagRequest(0)
 {
     GagImageDownloader::initializeCache();
     connect(m_netManager, SIGNAL(downloadCounterChanged()), SIGNAL(downloadCounterChanged()));
+
+    m_apiClient = new NineGagApiClient(m_netManager, this);
+    connect(m_apiClient, &NineGagApiClient::userLoginFinished, this, &GagBookManager::onUserLoginFinished);
+    connect(m_apiClient, &NineGagApiClient::userSessionEnded, this, &GagBookManager::onUserSessionEnded);
 }
 
 bool GagBookManager::isBusy() const
@@ -52,9 +51,22 @@ bool GagBookManager::isBusy() const
     return m_isBusy;
 }
 
+void GagBookManager::setBusy(bool busy)
+{
+    if (m_isBusy != busy) {
+        m_isBusy = busy;
+        emit busyChanged();
+    }
+}
+
 QString GagBookManager::downloadCounter() const
 {
     return m_netManager->downloadCounter();
+}
+
+QString GagBookManager::userName() const
+{
+    return m_apiClient->userDisplayName();
 }
 
 AppSettings *GagBookManager::settings() const
@@ -65,6 +77,7 @@ AppSettings *GagBookManager::settings() const
 void GagBookManager::setSettings(AppSettings *settings)
 {
     m_settings = settings;
+    syncLoginState();
 }
 
 NetworkManager *GagBookManager::networkManager() const
@@ -72,36 +85,57 @@ NetworkManager *GagBookManager::networkManager() const
     return m_netManager;
 }
 
-void GagBookManager::login(const QString &username, const QString &password)
+NineGagApiClient *GagBookManager::apiClient() const
 {
-    Q_ASSERT(m_netManager);
+    return m_apiClient;
+}
 
-    if (m_loginReply != 0) {
-        m_loginReply->disconnect();
-        m_loginReply->deleteLater();
-        m_loginReply = 0;
-    }
+/*!
+ * \brief GagBookManager::syncLoginState Makes the 'loggedIn' setting match the API session.
+ *  Older versions logged in through the website and only stored a cookie, those logins are
+ *  not usable with the API.
+ */
+void GagBookManager::syncLoginState()
+{
+    if (m_settings != 0)
+        m_settings->setLoggedIn(m_apiClient->isUserLoggedIn());
 
-    if (m_isBusy != true) {
-        m_isBusy = true;
-        emit busyChanged();
-    }
+    emit userNameChanged();
+}
 
-    QByteArray postData;
-    QUrlQuery postDataQuery;
-    postDataQuery.addQueryItem("username", username);
-    postDataQuery.addQueryItem("password", password);
-    postData = postDataQuery.toString(QUrl::FullyEncoded).toUtf8();
+void GagBookManager::login(const QString &username, const QString &password, bool rememberLogin)
+{
+    Q_ASSERT(m_apiClient);
 
-    m_loginReply = m_netManager->createPostRequest(QUrl("https://9gag.com/login"), postData);
-    connect(m_loginReply, SIGNAL(finished()), SLOT(onLoginFinished()));
+    setBusy(true);
+    m_apiClient->loginUser(username, password, rememberLogin);
 }
 
 void GagBookManager::logout()
 {
-    //we log out by removing the loggedin cookie
+    m_apiClient->logout();
+
+    // cookies of the old website login
     m_netManager->clearCookies();
-    m_settings->setLoggedIn(false);
+
+    syncLoginState();
+}
+
+void GagBookManager::onUserLoginFinished(bool success, const QString &errorMessage)
+{
+    setBusy(false);
+    syncLoginState();
+
+    if (success)
+        emit loginSuccess();
+    else
+        emit loginFailure(errorMessage);
+}
+
+void GagBookManager::onUserSessionEnded(const QString &message)
+{
+    syncLoginState();
+    emit sessionExpired(message);
 }
 
 GagRequest *GagBookManager::gagRequest()
@@ -122,33 +156,8 @@ void GagBookManager::initGagRequest()
                 qWarning("GagBookManager::GagBookManager(): Invalid source, default source will be used.");
                 // fallthrough
             case AppSettings::NineGagApiSource:
-                m_gagRequest = new NineGagApiRequest(m_netManager, this);
+                m_gagRequest = new NineGagApiRequest(m_netManager, m_apiClient, this);
                 break;
         }
-    }
-}
-
-void GagBookManager::onLoginFinished()
-{
-    if(m_loginReply->error() == QNetworkReply::NoError) {
-        const int statusCode = m_loginReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QUrl redirectUrl = m_loginReply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
-        // if redirect to 9gag.com, means login success
-        if (statusCode >= 300 && statusCode < 400 && redirectUrl.host() == "9gag.com") {
-            m_settings->setLoggedIn(true);
-            emit loginSuccess();
-        } else {
-            emit loginFailure("Wrong username or password. Please try again.");
-        }
-    } else {
-        emit loginFailure(m_loginReply->errorString());
-    }
-
-    m_loginReply->deleteLater();
-    m_loginReply = 0;
-
-    if (m_isBusy != false) {
-        m_isBusy = false;
-        emit busyChanged();
     }
 }

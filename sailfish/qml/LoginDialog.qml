@@ -33,8 +33,9 @@ Dialog {
 
     property alias username: usernameField.text
     property alias password: passwordField.text
+    property alias rememberLogin: rememberSwitch.checked
 
-    canAccept: usernameField.acceptableInput && passwordField.acceptableInput
+    canAccept: usernameField.acceptableInput && passwordField.text.length > 0
 
     SilicaFlickable {
         anchors.fill: parent
@@ -51,7 +52,7 @@ Dialog {
                 id: usernameField
                 anchors { left: parent.left; right: parent.right }
                 inputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
-                label: "Email"
+                label: "Email or username"
                 placeholderText: label
                 validator: RegExpValidator { regExp: /^\S+$/ }
                 EnterKey.enabled: acceptableInput
@@ -66,10 +67,17 @@ Dialog {
                 echoMode: TextInput.Password
                 label: "Password"
                 placeholderText: label
-                validator: RegExpValidator { regExp: /^\S+$/ }
-                EnterKey.enabled: acceptableInput
+                EnterKey.enabled: text.length > 0
                 EnterKey.iconSource: "image://theme/icon-m-enter-accept"
                 EnterKey.onClicked: loginDialog.accept();
+            }
+
+            TextSwitch {
+                id: rememberSwitch
+                anchors { left: parent.left; right: parent.right }
+                text: "Stay logged in"
+                description: "Saves your login name and a hash of your password on this phone, " +
+                             "so GagBook can renew your session when it expires."
             }
 
             Label {
@@ -77,9 +85,9 @@ Dialog {
                 font.pixelSize: constant.fontSizeSmall
                 color: Theme.highlightColor
                 wrapMode: Text.Wrap
-                text: "Login with the email address that you have signed up with 9GAG. " +
-                      "Login with Facebook or Google+ is not supported. " +
-                      "Your password is not stored by the app."
+                text: "Log in with the email address (or username) and password of your 9GAG account. " +
+                      "Logging in with Facebook, Google or Apple is not supported. " +
+                      "Unless you choose to stay logged in, your password is not stored by the app."
             }
         }
     }

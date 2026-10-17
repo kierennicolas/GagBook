@@ -69,6 +69,19 @@ Page {
                 onCheckedChanged: appSettings.scrollWithVolumeKeys = checked;
             }
 
+            SectionHeader { text: "9GAG account" }
+
+            Label {
+                anchors { left: parent.left; right: parent.right; margins: Theme.horizontalPageMargin }
+                wrapMode: Text.Wrap
+                color: Theme.highlightColor
+                text: gagbookManager.busy ? "Logging in..."
+                                          : appSettings.loggedIn ? "Logged in as " + (gagbookManager.userName || "9GAG user")
+                                                                 : "Not logged in"
+            }
+
+            Item { width: 1; height: Theme.paddingMedium }
+
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 enabled: !gagbookManager.busy
@@ -80,7 +93,7 @@ Page {
                     } else {
                         var dialog = pageStack.push(Qt.resolvedUrl("LoginDialog.qml"));
                         dialog.accepted.connect(function() {
-                            gagbookManager.login(dialog.username, dialog.password);
+                            gagbookManager.login(dialog.username, dialog.password, dialog.rememberLogin);
                         })
                     }
                 }
