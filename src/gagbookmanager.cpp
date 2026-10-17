@@ -28,6 +28,14 @@
 
 #include "gagbookmanager.h"
 
+#include <algorithm>
+
+#include <QtCore/QDebug>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtNetwork/QNetworkReply>
+
 #include "networkmanager.h"
 #include "gagimagedownloader.h"
 #include "appsettings.h"
@@ -36,7 +44,9 @@
 
 GagBookManager::GagBookManager(QObject *parent) :
     QObject(parent), m_isBusy(false), m_settings(0),
-    m_netManager(new NetworkManager(this)), m_apiClient(0), m_gagRequest(0)
+    m_netManager(new NetworkManager(this)), m_apiClient(0), m_gagRequest(0),
+    m_sectionsWanted(false), m_sectionsUpdated(false), m_sectionsReply(0),
+    m_suggestWanted(false), m_suggestReply(0)
 {
     GagImageDownloader::initializeCache();
     connect(m_netManager, SIGNAL(downloadCounterChanged()), SIGNAL(downloadCounterChanged()));
@@ -44,6 +54,8 @@ GagBookManager::GagBookManager(QObject *parent) :
     m_apiClient = new NineGagApiClient(m_netManager, this);
     connect(m_apiClient, &NineGagApiClient::userLoginFinished, this, &GagBookManager::onUserLoginFinished);
     connect(m_apiClient, &NineGagApiClient::userSessionEnded, this, &GagBookManager::onUserSessionEnded);
+    connect(m_apiClient, &NineGagApiClient::sessionReady, this, &GagBookManager::onSessionReady);
+    connect(m_apiClient, &NineGagApiClient::sessionFailed, this, &GagBookManager::onSessionFailed);
 }
 
 bool GagBookManager::isBusy() const
@@ -160,4 +172,196 @@ void GagBookManager::initGagRequest()
                 break;
         }
     }
+}
+
+void GagBookManager::updateSections()
+{
+    if (m_sectionsUpdated || m_sectionsReply != 0 || m_settings == 0)
+        return;
+
+    m_sectionsWanted = true;
+    sendPendingRequests();
+}
+
+void GagBookManager::suggestTags(const QString &text)
+{
+    if (m_suggestReply != 0) {
+        m_suggestReply->disconnect(this);
+        m_suggestReply->abort();
+        m_suggestReply->deleteLater();
+        m_suggestReply = 0;
+    }
+
+    m_suggestText = text.trimmed();
+    if (m_suggestText.isEmpty()) {
+        m_suggestWanted = false;
+        return;
+    }
+
+    m_suggestWanted = true;
+    sendPendingRequests();
+}
+
+/* Sends the waiting requests once there is a session. */
+void GagBookManager::sendPendingRequests()
+{
+    if (!m_sectionsWanted && !m_suggestWanted)
+        return;
+
+    if (!m_apiClient->sessionIsValid()) {
+        m_apiClient->requestSession();      // answers with onSessionReady() or onSessionFailed()
+        return;
+    }
+
+    if (m_sectionsWanted)
+        sendSectionsRequest();
+    if (m_suggestWanted)
+        sendSuggestRequest();
+}
+
+void GagBookManager::onSessionReady()
+{
+    sendPendingRequests();
+}
+
+void GagBookManager::onSessionFailed()
+{
+    // keep the built-in sections and local suggestions
+    m_sectionsWanted = false;
+    if (m_suggestWanted) {
+        m_suggestWanted = false;
+        emit tagSuggestions(m_suggestText, QVariantList());
+    }
+}
+
+void GagBookManager::sendSectionsRequest()
+{
+    m_sectionsWanted = false;
+    m_sectionsReply = m_apiClient->retrieveSections();
+    m_sectionsReply->setParent(this);
+    connect(m_sectionsReply, &QNetworkReply::finished, this, &GagBookManager::onSectionsReplyFinished);
+}
+
+void GagBookManager::sendSuggestRequest()
+{
+    m_suggestWanted = false;
+    m_suggestReply = m_apiClient->suggestTags(m_suggestText);
+    m_suggestReply->setParent(this);
+    m_suggestReply->setProperty("text", m_suggestText);
+    connect(m_suggestReply, &QNetworkReply::finished, this, &GagBookManager::onSuggestReplyFinished);
+}
+
+namespace {
+
+// the items of a JSON list, or the values of a JSON object used as a map
+QJsonArray jsonItems(const QJsonValue &value)
+{
+    if (value.isArray())
+        return value.toArray();
+
+    QJsonArray items;
+    const QJsonObject object = value.toObject();
+    for (QJsonObject::const_iterator it = object.constBegin(); it != object.constEnd(); ++it)
+        items.append(it.value());
+    return items;
+}
+
+QList<Section> interestSections(const QJsonValue &value, const QString &category)
+{
+    QList<Section> sections;
+    const QJsonArray items = jsonItems(value);
+
+    for (int i = 0; i < items.size(); ++i) {
+        const QJsonObject item = items.at(i).toObject();
+        const QString name = item.value(QStringLiteral("name")).toString().trimmed();
+        const QString key = item.value(QStringLiteral("listType")).toString().trimmed();
+        if (name.isEmpty() || key.isEmpty())
+            continue;
+        sections << Section::feed(name, key, QStringLiteral("interest"), category,
+                                  item.value(QStringLiteral("isSensitive")).toVariant().toBool());
+    }
+
+    std::sort(sections.begin(), sections.end(), [](const Section &a, const Section &b) {
+        return QString::localeAwareCompare(a.name(), b.name()) < 0;
+    });
+    return sections;
+}
+
+} // namespace
+
+void GagBookManager::onSectionsReplyFinished()
+{
+    QNetworkReply *reply = m_sectionsReply;
+    m_sectionsReply = 0;
+    reply->deleteLater();
+
+    const QJsonObject data = QJsonDocument::fromJson(reply->readAll()).object()
+            .value(QStringLiteral("data")).toObject();
+    const QList<Section> interests = interestSections(data.value(QStringLiteral("interests")),
+                                                      QStringLiteral("Interests"));
+
+    if (reply->error() != QNetworkReply::NoError || interests.isEmpty()) {
+        qWarning() << "GagBookManager: couldn't update the sections, keeping the built-in list. HTTP"
+                   << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        return;
+    }
+
+    m_sectionsUpdated = true;
+
+    SectionModel *model = m_settings->sections();
+    QList<Section> sections;
+    for (int i = 0; i < model->rowCount(); ++i) {
+        const QModelIndex index = model->index(i, 0);
+        if (model->data(index, SectionModel::KindRole).toString() == QLatin1String("home")) {
+            sections << Section::feed(model->data(index, SectionModel::NameRole).toString(),
+                                      model->data(index, SectionModel::UrlPathRole).toString(),
+                                      QStringLiteral("home"),
+                                      model->data(index, SectionModel::CategoryRole).toString(), false);
+        }
+    }
+    sections << interests
+             << interestSections(data.value(QStringLiteral("localInterests")), QStringLiteral("Local"));
+
+    // leave the model alone if nothing changed, a reset moves the list view to the top
+    bool changed = (sections.size() != model->rowCount());
+    for (int i = 0; !changed && i < sections.size(); ++i) {
+        const QModelIndex index = model->index(i, 0);
+        changed = sections.at(i).name() != model->data(index, SectionModel::NameRole).toString()
+                || sections.at(i).urlPath() != model->data(index, SectionModel::UrlPathRole).toString()
+                || sections.at(i).isSensitive() != model->data(index, SectionModel::IsSensitiveRole).toBool();
+    }
+
+    if (changed) {
+        model->setSections(sections);
+        m_settings->saveSections();
+        emit sectionsUpdated();
+    }
+}
+
+void GagBookManager::onSuggestReplyFinished()
+{
+    QNetworkReply *reply = m_suggestReply;
+    m_suggestReply = 0;
+    reply->deleteLater();
+
+    const QString text = reply->property("text").toString();
+    QVariantList tags;
+
+    if (reply->error() == QNetworkReply::NoError) {
+        const QJsonArray items = QJsonDocument::fromJson(reply->readAll()).object()
+                .value(QStringLiteral("data")).toObject().value(QStringLiteral("tags")).toArray();
+
+        for (int i = 0; i < items.size(); ++i) {
+            const QJsonObject item = items.at(i).toObject();
+            const QString name = item.value(QStringLiteral("value")).toString().trimmed();
+            if (name.isEmpty())
+                continue;
+            QVariantMap tag;
+            tag.insert(QStringLiteral("name"), name);
+            tag.insert(QStringLiteral("count"), item.value(QStringLiteral("count")).toVariant().toInt());
+            tags << tag;
+        }
+    }
+
+    emit tagSuggestions(text, tags);
 }

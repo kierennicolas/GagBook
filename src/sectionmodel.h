@@ -60,12 +60,25 @@ public:
      */
     Section(const QString &name, const QString &urlPath, bool isSensitive);
 
+    /*!
+     * \brief Section Constructor for a home feed ('hot', 'trending', 'fresh') or a 9GAG interest.
+     * \param name The name shown to the user.
+     * \param key For a home feed its type, for an interest its list type (e.g. 'humor').
+     * \param kind "home" or "interest".
+     * \param category The heading the section is listed under, e.g. "Interests".
+     * \param isSensitive True for interests with sensitive content (NSFW).
+     */
+    static Section feed(const QString &name, const QString &key, const QString &kind,
+                        const QString &category, bool isSensitive);
+
     QString name() const;
     QString urlPath() const;
     int groupId() const;
     QString listType() const;
     QString listType2() const;
     bool isSensitive() const;
+    QString kind() const;
+    QString category() const;
 
 private:
     QString m_name;
@@ -74,6 +87,8 @@ private:
     QString m_listType;
     QString m_listType2;
     bool m_isSensitive;
+    QString m_kind;
+    QString m_category;
 };
 
 /*!
@@ -94,7 +109,9 @@ public:
         GroupIdRole,
         ListTypeRole,
         ListType2Role,
-        IsSensitiveRole
+        IsSensitiveRole,
+        KindRole,
+        CategoryRole
     };
 
     /*!
@@ -138,7 +155,15 @@ public:
      */
     bool isEmpty();
 
-    //void setSectionsList(const QList<Section> &sectionsList);
+    /*!
+     * \brief setSections Replaces all sections, e.g. with the interests 9GAG currently lists.
+     */
+    void setSections(const QList<Section> &sections);
+
+    /*!
+     * \brief indexOf Returns the row of the section with \p kind and \p key, or -1.
+     */
+    Q_INVOKABLE int indexOf(const QString &kind, const QString &key) const;
 
     /*!
      * \brief setDefaultSections Resets the data model to the default sections.

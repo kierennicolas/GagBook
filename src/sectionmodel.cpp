@@ -30,23 +30,29 @@
 Section::Section(const QString &name, const QString &urlPath, const int &groupId, const QString &listType,
                  const QString &listType2, bool isSensitive)
     : m_name(name), m_urlPath(urlPath), m_groupId(groupId), m_listType(listType), m_listType2(listType2),
-      m_isSensitive(isSensitive)
+      m_isSensitive(isSensitive), m_kind(QStringLiteral("group"))
 {
-
 }
 
 Section::Section(const QString &name, const QString &urlPath, const int &groupId, bool isSensitive)
     : m_name(name), m_urlPath(urlPath), m_groupId(groupId), m_listType("hot"), m_listType2("hot"),
-      m_isSensitive(isSensitive)
+      m_isSensitive(isSensitive), m_kind(QStringLiteral("group"))
 {
-
 }
 
 Section::Section(const QString &name, const QString &urlPath, bool isSensitive)
     : m_name(name), m_urlPath(urlPath), m_groupId(-1), m_listType(QString()), m_listType2(QString()),
-      m_isSensitive(isSensitive)
+      m_isSensitive(isSensitive), m_kind(QStringLiteral("group"))
 {
+}
 
+Section Section::feed(const QString &name, const QString &key, const QString &kind,
+                      const QString &category, bool isSensitive)
+{
+    Section section(name, key, kind == QLatin1String("home") ? 1 : -1, isSensitive);
+    section.m_kind = kind;
+    section.m_category = category;
+    return section;
 }
 
 QString Section::name() const
@@ -77,6 +83,16 @@ QString Section::listType2() const
 bool Section::isSensitive() const
 {
     return m_isSensitive;
+}
+
+QString Section::kind() const
+{
+    return m_kind;
+}
+
+QString Section::category() const
+{
+    return m_category;
 }
 
 
@@ -120,6 +136,10 @@ QVariant SectionModel::data(const QModelIndex &index, int role) const
             reqData = section.listType2(); break;
         case IsSensitiveRole:
             reqData = section.isSensitive(); break;
+        case KindRole:
+            reqData = section.kind(); break;
+        case CategoryRole:
+            reqData = section.category(); break;
         default:
             reqData = QVariant(); break;
     }
@@ -136,6 +156,8 @@ QHash<int, QByteArray> SectionModel::roleNames() const
     roles[ListTypeRole] = "listType";
     roles[ListType2Role] = "listType2";
     roles[IsSensitiveRole] = "isSensitive";
+    roles[KindRole] = "kind";
+    roles[CategoryRole] = "category";
 
     return roles;
 }
@@ -164,78 +186,59 @@ bool SectionModel::isEmpty()
         return false;
 }
 
-//void SectionModel::setSectionsList(const QList<Section> &sectionsList)
-//{
-//    beginResetModel();
-//    m_sections = sectionsList;
-//    endResetModel();
-//}
+void SectionModel::setSections(const QList<Section> &sections)
+{
+    beginResetModel();
+    m_sections = sections;
+    endResetModel();
+}
+
+int SectionModel::indexOf(const QString &kind, const QString &key) const
+{
+    for (int i = 0; i < m_sections.size(); ++i) {
+        if (m_sections.at(i).kind() == kind && m_sections.at(i).urlPath() == key)
+            return i;
+    }
+    return -1;
+}
 
 void SectionModel::setDefaultSections()
 {
-    beginResetModel();
-    m_sections.clear();
-    m_sections.reserve(57);
+    // The home feeds, then the interests 9GAG listed in /v2/group-list in October 2026.
+    // GagBookManager::updateSections() replaces the interests with the live list.
+    QList<Section> sections;
+    sections << Section::feed("Hot", "hot", "home", "Feeds", false)
+             << Section::feed("Trending", "trending", "home", "Feeds", false)
+             << Section::feed("Fresh", "fresh", "home", "Feeds", false);
 
-    m_sections.append(Section("Hot", "hot", 1, QString(), QString(), false));
-    m_sections.append(Section("Trending", "trending", 1, QString(), QString(), false));
-    m_sections.append(Section("Fresh", "vote", 1, QString(), QString(), false));
-    m_sections.append(Section("Animals", "cute", 3, "hot", "hot", false));
-    m_sections.append(Section("Anime & Manga", "anime-manga", 32, "hot", "hot", false));
-    m_sections.append(Section("Ask 9GAG", "ask9gag", 31, "hot", "hot", false));
-    m_sections.append(Section("Awesome", "awesome", 7, "hot", "hot", false));
-    m_sections.append(Section("Basketball", "basketball", 76, "hot", "hot", false));
-    m_sections.append(Section("Car", "car", 62, "hot", "hot", false));
-    m_sections.append(Section("Comics", "comic", 17, "hot", "hot", false));
-    m_sections.append(Section("Cosplay", "cosplay", 11, "hot", "hot", false));
-    m_sections.append(Section("Countryballs", "country", 38, "hot", "hot", false));
-    m_sections.append(Section("Classical Art Memes", "classicalartmemes", 72, "hot", "hot", false));
-    m_sections.append(Section("DIY & Crafts", "imadedis", 41, "hot", "hot", false));
-    m_sections.append(Section("Drawing & Illustration", "drawing", 84, "hot", "hot", false));
-    m_sections.append(Section("Fan Art", "animefanart", 85, "hot", "hot", false));
-    m_sections.append(Section("Food & Drinks", "food", 8, "hot", "hot", false));
-    m_sections.append(Section("Football", "football", 77, "hot", "hot", false));
-    m_sections.append(Section("Fortnite", "fortnite", 79, "hot", "hot", false));
-    m_sections.append(Section("Funny", "funny", 27, "hot", "hot", false));
-    m_sections.append(Section("Gaming", "gaming", 5, "hot", "hot", false));
-    m_sections.append(Section("GIF", "gif", 10, "hot", "hot", false));
-    m_sections.append(Section("Girl", "girl", 16, "hot", "hot", false));
-    m_sections.append(Section("Girly Things", "girly", 47, "hot", "hot", false));
-    m_sections.append(Section("Guy", "guy", 20, "hot", "hot", false));
-    m_sections.append(Section("History", "history", 66, "hot", "hot", false));
-    m_sections.append(Section("Horror", "horror", 40, "hot", "hot", false));
-    m_sections.append(Section("Home Design", "home", 74, "hot", "hot", false));
-    m_sections.append(Section("K-Pop", "kpop", 34, "hot", "hot", false));
-    m_sections.append(Section("League Of Legends", "leagueoflegends", 81, "hot", "hot", false));
-    m_sections.append(Section("LEGO", "lego", 83, "hot", "hot", false));
-    m_sections.append(Section("Movie & TV", "movie-tv", 33, "hot", "hot", false));
-    m_sections.append(Section("Music", "music", 63, "hot", "hot", false));
-    m_sections.append(Section("NFK - Not For Kids", "nsfw", 12, "hot", "hot", true));
-    m_sections.append(Section("Overwatch", "overwatch", 60, "hot", "hot", false));
-    m_sections.append(Section("PC Master Race", "pcmr", 64, "hot", "hot", false));
-    m_sections.append(Section("Pic Of The Day", "photography", 73, "hot", "hot", false));
-    m_sections.append(Section("Pokémon", "pokemon", 82, "hot", "hot", false));
-    m_sections.append(Section("Politics", "politics", 43, "hot", "hot", false));
-    m_sections.append(Section("Relationship", "relationship", 44, "hot", "hot", false));
-    m_sections.append(Section("PUBG", "pubg", 78, "hot", "hot", false));
-    m_sections.append(Section("Roast Me", "roastme", 75, "hot", "hot", false));
-    m_sections.append(Section("Savage", "savage", 45, "hot", "hot", false));
-    m_sections.append(Section("Satisfying", "satisfying", 61, "hot", "hot", false));
-    m_sections.append(Section("School", "school", 36, "hot", "hot", false));
-    m_sections.append(Section("Sci-Tech", "science", 42, "hot", "hot", false));
-    m_sections.append(Section("Star Wars", "starwars", 70, "hot", "hot", false));
-    m_sections.append(Section("Superhero", "superhero", 49, "hot", "hot", false));
-    m_sections.append(Section("Surreal Memes", "surrealmemes", 71, "hot", "hot", false));
-    m_sections.append(Section("Sport", "sport", 35, "hot", "hot", false));
-    m_sections.append(Section("Travel", "travel", 9, "hot", "hot", false));
-    m_sections.append(Section("Timely", "timely", 14, "hot", "hot", false));
-    m_sections.append(Section("Video", "video", 57, "hot", "hot", false));
-    m_sections.append(Section("Warhammer", "warhammer", 80, "hot", "hot", false));
-    m_sections.append(Section("Wallpaper", "wallpaper", 65, "hot", "hot", false));
-    m_sections.append(Section("WTF", "wtf", 4, "hot", "hot", false));
-    m_sections.append(Section("Dark Humor", "darkhumor", 37, "hot", "hot", true));
+    struct { const char *name; const char *key; bool sensitive; } interests[] = {
+        { "Animals & Pets", "animals", false }, { "Anime & Manga", "anime", false },
+        { "Anime NSFW", "animensfw", true }, { "Cat", "cats", false }, { "Comic", "comic", false },
+        { "Cosplay", "cosplay", false }, { "Crypto", "crypto", false }, { "Food & Drinks", "food", false },
+        { "Gaming", "games", false }, { "Girl", "girlsfw", true }, { "Girl NSFW", "girlnsfw", true },
+        { "Guy NSFW", "guys", true }, { "Humor", "humor", false }, { "Latest News", "news", false },
+        { "Lifestyle", "lifestyle", false }, { "Memes", "memes", false },
+        { "Motor Vehicles", "motorvehicles", false }, { "Movies & TV", "movies", false },
+        { "Music", "music", false }, { "Old Meme", "oldmeme", false }, { "Politics", "politics", false },
+        { "Random", "random", false }, { "Relationship & Dating", "relationship", false },
+        { "Science & Tech", "science", false }, { "Sports", "sports", false },
+        { "Superhero", "superhero", false }, { "Wholesome", "wholesome", false },
+        { "Woah", "woah", false }, { "WTF", "wtf", false }
+    };
+    for (size_t i = 0; i < sizeof(interests) / sizeof(interests[0]); ++i)
+        sections << Section::feed(QString::fromUtf8(interests[i].name), interests[i].key, "interest",
+                                  "Interests", interests[i].sensitive);
 
-    endResetModel();
+    struct { const char *name; const char *key; } locals[] = {
+        { "Brazil", "brazil" }, { "Canada", "canada" }, { "France", "france" }, { "Germany", "germany" },
+        { "Hong Kong", "hongkong" }, { "India", "india" }, { "Indonesia", "indonesia" },
+        { "Mexico", "mexico" }, { "Netherlands", "netherlands" }, { "Philippines", "philippines" },
+        { "United Kingdom", "unitedkingdom" }, { "USA", "usa" }
+    };
+    for (size_t i = 0; i < sizeof(locals) / sizeof(locals[0]); ++i)
+        sections << Section::feed(QString::fromUtf8(locals[i].name), locals[i].key, "interest", "Local", false);
+
+    setSections(sections);
 }
 
 void SectionModel::save(QSettings *settings, const QString &key) const
@@ -250,6 +253,8 @@ void SectionModel::save(QSettings *settings, const QString &key) const
         //settings->setValue("listType", m_sections.at(i).listType());
         //settings->setValue("listType2", m_sections.at(i).listType2());
         settings->setValue("isSensitive", m_sections.at(i).isSensitive());
+        settings->setValue("kind", m_sections.at(i).kind());
+        settings->setValue("category", m_sections.at(i).category());
     }
 
     settings->endArray();
@@ -269,8 +274,15 @@ void SectionModel::restore(QSettings *settings, const QString &key)
         groupId = settings->value("groupId");
         isSensitive = settings->value("isSensitive");
 
-        Section section(name.toString(), urlPath.toString(), groupId.toInt(), isSensitive.toBool());
-        m_sections.append(section);
+        const QString kind = settings->value("kind").toString();
+
+        if (kind.isEmpty()) {
+            // a section list from before 1.6.0
+            m_sections.append(Section(name.toString(), urlPath.toString(), groupId.toInt(), isSensitive.toBool()));
+        } else {
+            m_sections.append(Section::feed(name.toString(), urlPath.toString(), kind,
+                                            settings->value("category").toString(), isSensitive.toBool()));
+        }
     }
 
     settings->endArray();

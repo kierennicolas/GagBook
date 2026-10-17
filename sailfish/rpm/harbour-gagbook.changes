@@ -5,6 +5,14 @@
 # * date Author's Name <author's email> version-release
 # - Summary of changes
 
+* Sun Oct 18 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.6.0-1
+- Replace the 2019 sections with 9GAG's current interests (Humor, Memes, Girl NSFW, ...)
+- Load the interest list from 9GAG, with a built-in list as fallback
+- Group the sections into Feeds, Interests and Local, and mark sensitive ones
+- Search tags from the pull-down menu, with suggestions from 9GAG as you type
+- Show the posts of any tag
+- Skip posts a next page repeats
+
 * Sat Oct 17 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.5.1-1
 - Identify as the 9GAG app (User-Agent, X-Package-Version), the login got HTTP 403
 - Say when 9GAG's firewall blocks a request, and log what answered

@@ -61,12 +61,11 @@ void GagRequest::initiateGagsRequest()
 
 /*!
  * \brief GagRequest::fetchGags Initiates the request to fetch the gags.
- * \param groupId The id to select between the different sections/groups.
- * \param section Specifies the current section, e.g. 'hot'.
- * \param lastId The id of the last gag/post. If this is set, the retrieved
- *  gags are older than the last gag (pagination).
+ * \param feed The home feed, interest or tag to fetch.
+ * \param lastId The ids of the last posts, to get the next page of a home feed or interest.
+ * \param fromIndex The number of posts already loaded, to get the next page of a tag.
  */
-void GagRequest::fetchGags(int groupId, QString &section, QString &lastId)
+void GagRequest::fetchGags(const GagFeed &feed, const QString &lastId, int fromIndex)
 {
     // a newer request replaces one that is still running (e.g. a refresh after logging in)
     if (m_gagsReply != 0) {
@@ -77,7 +76,7 @@ void GagRequest::fetchGags(int groupId, QString &section, QString &lastId)
         m_gagsReply = 0;
     }
 
-    m_gagsReply = fetchGagsImpl(groupId, section, lastId);
+    m_gagsReply = fetchGagsImpl(feed, lastId, fromIndex);
 
     // make sure the QNetworkReply will be destroyed when this object is destroyed
     m_gagsReply->setParent(this);

@@ -13,7 +13,8 @@ GagBook is an unofficial Sailfish OS app for the [9GAG.com](https://9gag.com) we
 ## Features
 
 - Simple, smooth and native Sailfish Silica UI
-- View posts in different sections, e.g. Hot, Trending, Fresh, etc.
+- View Hot, Trending and Fresh, and all of 9GAG's current interests (Humor, Memes, Gaming, ...)
+- Search tags, with suggestions from 9GAG, and view the posts of any tag
 - Account login with your 9GAG email address (or username) and password
 - View comments of each post
 - Save image and video files
@@ -35,6 +36,10 @@ Since version 1.5.0 GagBook logs in through the 9GAG app API (`api.9gag.com/v2/u
 - The API is undocumented, so 9GAG can change or close it at any time.
 
 I will update GagBook to fix bugs and implement new features.
+
+### Sections and tags
+
+9GAG replaced its numbered sections with named interests. GagBook loads the current list from `/v2/group-list` when the section page first opens (falling back to a built-in list), shows an interest with `/v2/post-list/interest/<name>`, tags with `/v2/tag-search` and suggests tags with `/v2/tag-suggest`. `tools/probe-9gag-api.sh` checks these endpoints from a phone.
 
 ### Building
 

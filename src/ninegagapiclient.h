@@ -86,7 +86,10 @@ public:
     /*! Mark the current token as unusable, e.g. after the API answered 401. */
     void invalidateSession();
 
-    QNetworkReply *getPosts(const int groupId, const QString &section, const QString &lastId);
+    QNetworkReply *getHomePosts(const QString &type, const QString &lastId);
+    QNetworkReply *getInterestPosts(const QString &interest, const QString &lastId);
+    QNetworkReply *getTagPosts(const QString &tag, int fromIndex);
+    QNetworkReply *suggestTags(const QString &text);
     QNetworkReply *getComments(const QUrl &gagUrl, const int count, const int level, QString refComment,
                                SortOrder sortOrder, SortDirection sortDirection,
                                const QString &auth = QString());

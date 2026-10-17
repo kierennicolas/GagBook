@@ -33,15 +33,29 @@ ListItem {
     id: simpleListItem
 
     property alias text: labelItem.text
+    property alias detail: detailItem.text     // small text on the right, e.g. "Sensitive"
     property bool selected: false
 
     contentHeight: Theme.itemSizeSmall
     width: ListView.view ? ListView.view.width : parent.width
 
     Label {
+        id: detailItem
+        anchors {
+            right: parent.right; rightMargin: Theme.horizontalPageMargin
+            verticalCenter: parent.verticalCenter
+        }
+        font.pixelSize: Theme.fontSizeExtraSmall
+        color: Theme.secondaryColor
+        visible: text.length > 0
+    }
+
+    Label {
         id: labelItem
         anchors {
-            left: parent.left; right: parent.right; margins: Theme.horizontalPageMargin
+            left: parent.left; leftMargin: Theme.horizontalPageMargin
+            right: detailItem.visible ? detailItem.left : parent.right
+            rightMargin: detailItem.visible ? Theme.paddingMedium : Theme.horizontalPageMargin
             verticalCenter: parent.verticalCenter
         }
         font.bold: selected

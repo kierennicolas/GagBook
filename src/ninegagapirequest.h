@@ -45,7 +45,7 @@ public:
 
 protected:
     void startGagsRequest();
-    QNetworkReply *fetchGagsImpl(const int groupId, const QString &section, const QString &lastId);
+    QNetworkReply *fetchGagsImpl(const GagFeed &feed, const QString &lastId, int fromIndex);
     QList<GagObject> parseGags(const QByteArray &response);
     bool retryAfterGagsError(QNetworkReply *reply);
     QNetworkReply *fetchCommentsImpl(const QVariantList &data);

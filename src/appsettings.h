@@ -91,6 +91,9 @@ public:
     SectionModel *sections() const;
     void setSections(const SectionModel *sections);
 
+    /*! Store the current section list, e.g. after it was updated from 9GAG. */
+    void saveSections();
+
 signals:
     void loggedInChanged();
     void whiteThemeChanged();

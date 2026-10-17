@@ -111,15 +111,22 @@ bool NineGagApiRequest::retryAfterGagsError(QNetworkReply *reply)
 /*!
  * \brief NineGagApiRequest::fetchGagsImpl Reimplementation to perform the network
  *  request for fetching the gags.
- * \param groupId The id to select between the different sections/groups.
- * \param section Specifies the section from which the gags should be fetched.
- * \param lastId The id of the last gag needed for the pagination.
+ * \param feed The home feed, interest or tag to fetch.
+ * \param lastId The ids of the last posts (pagination of home feeds and interests).
+ * \param fromIndex The number of posts already loaded (pagination of tags).
  * \return Returns the QNetworkReply object of the request.
  */
-QNetworkReply *NineGagApiRequest::fetchGagsImpl(const int groupId, const QString &section,
-                                                const QString &lastId)
+QNetworkReply *NineGagApiRequest::fetchGagsImpl(const GagFeed &feed, const QString &lastId, int fromIndex)
 {
-    return m_apiClient->getPosts(groupId, section, lastId);
+    switch (feed.kind) {
+    case GagFeed::Interest:
+        return m_apiClient->getInterestPosts(feed.key, lastId);
+    case GagFeed::Tag:
+        return m_apiClient->getTagPosts(feed.key, fromIndex);
+    case GagFeed::Home:
+    default:
+        return m_apiClient->getHomePosts(feed.key, lastId);
+    }
 }
 
 /*!

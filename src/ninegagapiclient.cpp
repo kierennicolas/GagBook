@@ -68,6 +68,8 @@ const QByteArray POSTS_PATH = "/v2/post-list";
 const QByteArray GUEST_PATH = "/v2/guest-token";
 const QByteArray LOGIN_PATH = "/v2/user-token";
 const QByteArray SECTIONS_PATH = "/v2/group-list";
+const QByteArray TAG_SEARCH_PATH = "/v2/tag-search";
+const QByteArray TAG_SUGGEST_PATH = "/v2/tag-suggest";
 const QByteArray COMMENT_PATH = "/v1/comment.json";
 const QByteArray COMMENT_PATH_CDN = "/v1/cacheable/comment-list.json";
 const QByteArray COMMENTINFO_PATH = "/v1/commentInfo.json";
@@ -681,25 +683,11 @@ void NineGagApiClient::saveUserSession() const
 }
 
 /*!
- * \brief NineGagApiClient::getPosts Performs an API request and returns the response as QNetworkReply.
- *  Be aware that first a session has to be requested to access the servers.
- * \param groupId The id to select between the different sections/groups.
- * \param section Selects the 'subsection' inside the given group/section ('hot', 'trending' or 'vote').
- * \param lastId The ids of the last GagObjects in the list.
- * \return Returns the post data.
+ * \brief appendPageArgs Adds the paging arguments every post list takes.
  */
-QNetworkReply *NineGagApiClient::getPosts(const int groupId, const QString &section, const QString &lastId)
+static void appendPageArgs(QList<QPair<QString, QString> > &args, const QString &lastId)
 {
-    ArgList args;
-
-    // posts category
-    args << qMakePair(QStringLiteral("group"), QString::number(groupId));
-
-    // ToDo: This is just a quick fix for the sections! Adapt the model and GUI to fix this properly.
-    // '-> "type" can be "hot" or "vote" for groups with 'groupId != 1'
-    args << qMakePair(QStringLiteral("type"), (groupId == 1) ? section : QStringLiteral("hot"));
-
-    // count of posts
+    // count of posts (GagModel builds the next page from the last 9 ids)
     args << qMakePair(QStringLiteral("itemCount"), QStringLiteral("9"));
 
     // ToDo: disabled album and video posts until support is added | "animated,photo,video,article"
@@ -707,8 +695,69 @@ QNetworkReply *NineGagApiClient::getPosts(const int groupId, const QString &sect
 
     if (!lastId.isEmpty())
         args << qMakePair(QStringLiteral("olderThan"), lastId);
+}
+
+/*!
+ * \brief NineGagApiClient::getHomePosts Requests a page of one of the home feeds.
+ *  Be aware that first a session has to be requested to access the servers.
+ * \param type 'hot', 'trending' or 'fresh'.
+ * \param lastId The ids of the last posts already shown (next page), or empty.
+ */
+QNetworkReply *NineGagApiClient::getHomePosts(const QString &type, const QString &lastId)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("group"), QStringLiteral("1"));
+    args << qMakePair(QStringLiteral("type"), type);
+    appendPageArgs(args, lastId);
 
     return this->request(apiRequest(apiUrl(POSTS_PATH, args), m_appToken));
+}
+
+/*!
+ * \brief NineGagApiClient::getInterestPosts Requests a page of a 9GAG interest
+ *  ('/v2/post-list/interest/humor/type/hot/...', confirmed Oct 2026).
+ * \param interest The interest's list type, e.g. 'humor' or 'girlnsfw'.
+ * \param lastId The ids of the last posts already shown (next page), or empty.
+ */
+QNetworkReply *NineGagApiClient::getInterestPosts(const QString &interest, const QString &lastId)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("interest"), interest);
+    args << qMakePair(QStringLiteral("type"), QStringLiteral("hot"));
+    appendPageArgs(args, lastId);
+
+    return this->request(apiRequest(apiUrl(POSTS_PATH, args), m_appToken));
+}
+
+/*!
+ * \brief NineGagApiClient::getTagPosts Requests a page of posts with a tag
+ *  ('/v2/tag-search/query/cat/fromIndex/0/...', confirmed Oct 2026).
+ * \param tag The tag as 9GAG shows it, e.g. 'old meme'.
+ * \param fromIndex The number of posts already loaded.
+ */
+QNetworkReply *NineGagApiClient::getTagPosts(const QString &tag, int fromIndex)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("query"), tag.trimmed());
+    args << qMakePair(QStringLiteral("fromIndex"), QString::number(fromIndex));
+    args << qMakePair(QStringLiteral("itemCount"), QStringLiteral("9"));
+    args << qMakePair(QStringLiteral("entryTypes"), QStringLiteral("animated,photo"));
+    args << qMakePair(QStringLiteral("offset"), QStringLiteral("10"));
+    args << qMakePair(QStringLiteral("sort"), QStringLiteral("asc"));
+
+    return this->request(apiRequest(apiUrl(TAG_SEARCH_PATH, args), m_appToken));
+}
+
+/*!
+ * \brief NineGagApiClient::suggestTags Requests tag suggestions for typed text
+ *  ('/v2/tag-suggest/query/ca', answers data.tags[{value, count, highlighted}]).
+ */
+QNetworkReply *NineGagApiClient::suggestTags(const QString &text)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("query"), text.trimmed());
+
+    return this->request(apiRequest(apiUrl(TAG_SUGGEST_PATH, args), m_appToken));
 }
 
 /*!
@@ -787,7 +836,8 @@ QNetworkReply *NineGagApiClient::getComments(const QUrl &gagUrl, const int count
 }
 
 /*!
- * \brief NineGagApiClient::retrieveSections Requests the list of 9GAG sections (groups).
+ * \brief NineGagApiClient::retrieveSections Requests the lists of 9GAG sections ('groups'),
+ *  interests ('interests') and local interests ('localInterests').
  */
 QNetworkReply *NineGagApiClient::retrieveSections()
 {

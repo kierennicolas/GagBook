@@ -36,6 +36,7 @@
 #include "networkmanager.h"
 #include "gagobject.h"
 #include "gagmodel.h"
+#include "gagfeed.h"
 #include "commentobject.h"
 
 class GagRequest : public QObject
@@ -46,7 +47,10 @@ public:
     explicit GagRequest(NetworkManager *networkManager, QObject *parent = 0);
 
     void initiateGagsRequest();
-    void fetchGags(int groupId, QString &section, QString &lastId);
+    /*! Fetch a page of \p feed. For the next page, \p lastId holds the ids of the last
+     *  posts (home feeds and interests) and \p fromIndex the number of posts already
+     *  loaded (tags). */
+    void fetchGags(const GagFeed &feed, const QString &lastId, int fromIndex);
     void fetchComments(const QVariantList &data, CommentObject *parentComment);
     void abortCommentsRequest();
 
@@ -88,13 +92,9 @@ protected:
      *  \sa readyToRequestGags */
     virtual void startGagsRequest() = 0;
 
-    /*! Implement this to make your own network request.\p groupId The id to select
-     * between the different sections/groups. \p section Specifies the section from
-     * which the gags should be fetched, eg. 'hot'. \p lastId is the id of the last
-     * gag (it has to be an empty QString object if the latest gags that should be
-     * fetched). */
-    virtual QNetworkReply *fetchGagsImpl(const int groupId, const QString &section,
-                                         const QString &lastId) = 0;
+    /*! Implement this to make your own network request for a page of \p feed.
+     *  \sa fetchGags */
+    virtual QNetworkReply *fetchGagsImpl(const GagFeed &feed, const QString &lastId, int fromIndex) = 0;
 
     /*! Implement this to parse the network response to a list of GagObjects.
      *  \p response This is the content of the network reply. */

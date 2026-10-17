@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2026 Kieren Nicolas.
  * Copyright (c) 2014 Dickson Leong.
  * All rights reserved.
  *
@@ -34,108 +35,38 @@ Page {
 
     property GagModel gagModel
 
+    // load the interests 9GAG lists right now (once per app session)
+    Component.onCompleted: gagbookManager.updateSections()
+
     SilicaListView {
         id: listView
         anchors.fill: parent
         model: appSettings.sections
 
         header: PageHeader { title: qsTr("Sections") }
-// ToDo:
-//        PullDownMenu {
-//            MenuItem {
-//                text: qsTr("Add section")
-//                onClicked: sectionPanel.open = true
-//            }
-//        }
 
-        delegate:
-            BackgroundItem {
-            id: bgdelegate
-            width: parent.width
-            height: menuOpen ? contextMenu.height + simpleListItem.height : simpleListItem.height
-            property Item contextMenu
-            property bool menuOpen: contextMenu != null && contextMenu.parent === bgdelegate
-// ToDo:
-            function remove() {
-                var removal = removalComponent.createObject(bgdelegate)
-                removal.execute(simpleListItem, qsTr("Deleting") + " " + modelData, function() { appSettings.sections.splice(appSettings.sections.indexOf(modelData), 1) })
+        PullDownMenu {
+            MenuItem {
+                text: qsTr("Search tags")
+                onClicked: pageStack.push(Qt.resolvedUrl("SearchPage.qml"), { gagModel: gagModel })
             }
+        }
 
-            SimpleListItem {
-                id: simpleListItem
-                selected: gagModel.selectedSection == index
-                text: name
+        section.property: "category"
+        section.delegate: SectionHeader { text: section }
 
-                function showContextMenu() {
-                    if (!contextMenu)
-                        contextMenu = myMenu.createObject(listView)
-                    contextMenu.show(bgdelegate)
-                }
+        delegate: SimpleListItem {
+            selected: gagModel.tag === "" && gagModel.selectedSection == index
+            text: name
+            detail: isSensitive ? qsTr("Sensitive") : ""
 
-                onClicked: {
-                    gagModel.selectedSection = index;
-                    gagModel.refresh(GagModel.RefreshAll);
-                    pageStack.navigateBack();
-                }
-
-//                onPressAndHold: showContextMenu()
-
+            onClicked: {
+                gagModel.selectedSection = index;
+                gagModel.refresh(GagModel.RefreshAll);
+                pageStack.navigateBack();
             }
-            Component {
-                id: removalComponent
-                RemorseItem {
-                    id: remorse
-                    onCanceled: destroy()
-                }
-            }
-
-            Component {
-                id: myMenu
-                ContextMenu {
-                    MenuItem {
-                        text: qsTr("Delete")
-                        onClicked: {
-                            bgdelegate.remove();
-                        }
-                    }
-                }
-            }
-        } // Background Item End
+        }
 
         VerticalScrollDecorator {}
     }
-
-    DockedPanel {
-        id: sectionPanel
-
-        width: sectionPage.isPortrait ? parent.width : Theme.itemSizeExtraLarge + Theme.paddingLarge
-        height: sectionPage.isPortrait ? Theme.itemSizeExtraLarge + Theme.paddingLarge : parent.height
-        modal: true
-
-        dock: sectionPage.isPortrait ? Dock.Bottom : Dock.Right
-        onOpenChanged: {
-            if (open) inputName.forceActiveFocus();
-            else sectionPage.forceActiveFocus();
-        }
-
-        TextField {
-            id: inputName
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - (Theme.paddingLarge * 2)
-            placeholderText: qsTr("Enter Sectioname")
-            label: qsTr("Section")
-            inputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
-            // Only allow Enter key to be pressed when text has been entered
-            EnterKey.enabled: text.length > 0
-            EnterKey.onClicked: {
-                appSettings.sections.push(text)
-                sectionPanel.open = false
-                Qt.inputMethod.hide();
-                sectionPage.forceActiveFocus();
-            }
-        }
-
-    }
-
 }

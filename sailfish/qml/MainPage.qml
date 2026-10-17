@@ -45,12 +45,11 @@ Page {
         currentIndex = index;
     }
 
-    property bool __pushedAttached: false
+    // the section list is the attached page; pushing another page (search, settings) can
+    // remove it, so attach it again whenever this page is active without it
     onStatusChanged: {
-        if (status == PageStatus.Active && !__pushedAttached) {
+        if (status == PageStatus.Active && !pageStack.nextPage(mainPage))
             pageStack.pushAttached(Qt.resolvedUrl("SectionPage.qml"), { gagModel: gagModel });
-            __pushedAttached = true;
-        }
     }
 
     property bool newCommentsIconExists
@@ -87,12 +86,16 @@ Page {
                 onClicked: pageStack.push(Qt.resolvedUrl("AppSettingsPage.qml"));
             }
             MenuItem {
+                text: "Search tags"
+                onClicked: pageStack.push(Qt.resolvedUrl("SearchPage.qml"), { gagModel: gagModel });
+            }
+            MenuItem {
                 text: "Refresh"
                 onClicked: gagModel.refresh(GagModel.RefreshAll);
             }
         }
 
-        header: PageHeader { title: "/" + appSettings.sections.getSection(gagModel.selectedSection).name }
+        header: PageHeader { title: gagModel.feedTitle || "GagBook" }
 
         delegate: GagDelegate { newCommentsIconExists: mainPage.newCommentsIconExists }
 

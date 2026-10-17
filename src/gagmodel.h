@@ -33,6 +33,7 @@
 #include <QtQml/QQmlParserStatus>
 
 #include "gagobject.h"
+#include "gagfeed.h"
 
 class GagBookManager;
 class GagImageDownloader;
@@ -61,6 +62,12 @@ class GagModel : public QAbstractListModel, public QQmlParserStatus
 
     /*! The selected 9GAG section to get the gags. */
     Q_PROPERTY(int selectedSection READ selectedSection WRITE setSelectedSection NOTIFY selectedSectionChanged)
+
+    /*! The tag whose posts are shown, empty while a section is shown. \sa showTag() */
+    Q_PROPERTY(QString tag READ tag NOTIFY feedChanged)
+
+    /*! Title of what is shown, e.g. "Humor" or "#old meme". */
+    Q_PROPERTY(QString feedTitle READ feedTitle NOTIFY feedChanged)
 public:
     enum Roles {
         TitleRole = Qt::UserRole +1,
@@ -110,6 +117,12 @@ public:
     int selectedSection() const;
     void setSelectedSection(int selectedSection);
 
+    QString tag() const;
+    QString feedTitle() const;
+
+    /*! Show the posts with the tag \p tag instead of the selected section. */
+    Q_INVOKABLE void showTag(const QString &tag);
+
     /*! Refresh the gag list. */
     Q_INVOKABLE void refresh(RefreshType refreshType);
     /*! Stop and abort the refresh request. */
@@ -124,6 +137,7 @@ signals:
     void progressChanged();
     void manualProgressChanged();
     void selectedSectionChanged();
+    void feedChanged();
 
     /*! Emit when the refresh failed, \p errorMessage contains the reason for the
         failure and should be shown to the user. */
@@ -138,12 +152,18 @@ private slots:
     void onDownloadFinished();
     void onManualDownloadProgress(qint64 downloaded, qint64 total);
     void onManualDownloadFinished();
+    void onSectionsReset();
 
 private:
-    int m_groupId;
-    QString m_section;
+    GagFeed sectionFeed(int row) const;
+
+    GagFeed m_feed;
     QString m_lastId;
+    int m_fromIndex;
     int m_selectedSection;
+    QString m_selectedKind;     // kind and key of the selected section, to find it again
+    QString m_selectedKey;      // after the section list was updated
+    QString m_tag;
     bool m_busy;
     qreal m_progress;
     qreal m_manualProgress;

@@ -30,12 +30,14 @@
 #define GAGBOOKMANAGER_H
 
 #include <QtCore/QObject>
+#include <QtCore/QVariantList>
 
 #include "gagrequest.h"
 
 class NetworkManager;
 class NineGagApiClient;
 class AppSettings;
+class QNetworkReply;
 
 /*! Handle login and hold other global instance class
 
@@ -88,10 +90,21 @@ public:
 
     GagRequest *gagRequest();
 
+    /*! Replace the interests in the section list with the ones 9GAG lists right now.
+        Runs once per app session; emits sectionsUpdated() if the list changed. */
+    Q_INVOKABLE void updateSections();
+
+    /*! Ask 9GAG for tags matching \p text. Answers with tagSuggestions(); a newer call
+        replaces an unanswered one. */
+    Q_INVOKABLE void suggestTags(const QString &text);
+
 private:
     void initGagRequest();
     void setBusy(bool busy);
     void syncLoginState();
+    void sendPendingRequests();
+    void sendSectionsRequest();
+    void sendSuggestRequest();
 
 signals:
     void busyChanged();
@@ -109,9 +122,20 @@ signals:
         \p message should show to user. */
     void sessionExpired(const QString &message);
 
+    /*! Emit when the section list was replaced with 9GAG's current interests. */
+    void sectionsUpdated();
+
+    /*! Answer to suggestTags(). \p tags is a list of {"name": ..., "count": ...}, empty if
+        9GAG couldn't be asked. */
+    void tagSuggestions(const QString &text, const QVariantList &tags);
+
 private slots:
     void onUserLoginFinished(bool success, const QString &errorMessage);
     void onUserSessionEnded(const QString &message);
+    void onSessionReady();
+    void onSessionFailed();
+    void onSectionsReplyFinished();
+    void onSuggestReplyFinished();
 
 private:
     bool m_isBusy;
@@ -119,6 +143,13 @@ private:
     NetworkManager *m_netManager;
     NineGagApiClient *m_apiClient;
     GagRequest *m_gagRequest;
+
+    bool m_sectionsWanted;      // updateSections() waits for a session
+    bool m_sectionsUpdated;     // done for this app session
+    QNetworkReply *m_sectionsReply;
+    QString m_suggestText;      // text of the suggestTags() call waiting for a session
+    bool m_suggestWanted;
+    QNetworkReply *m_suggestReply;
 };
 
 #endif // GAGBOOKMANAGER_H

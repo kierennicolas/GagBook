@@ -16,6 +16,7 @@ HEADERS += \
     ../src/gagmodel.h \
     ../src/gagobject.h \
     ../src/gagrequest.h \
+    ../src/gagfeed.h \
     ../src/networkmanager.h \
     ../src/gagimagedownloader.h \
     ../src/gagcookiejar.h \
@@ -66,9 +67,11 @@ DISTFILES += \
     qml/main.qml \
     qml/MainPage.qml \
     qml/OpenLinkDialog.qml \
+    qml/SearchPage.qml \
     qml/SectionPage.qml \
     qml/SimpleListItem.qml \
     qml/SortPage.qml \
+    qml/Tags.js \
     qml/VideoComponent.qml
 
 OTHER_FILES += \
