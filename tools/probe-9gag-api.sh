@@ -13,10 +13,11 @@ VER=80240700
 UA="9GAG/$VER (Jolla Sailfish OS;Android 10)"
 TYPES=animated,photo,video,article
 BODY=$(mktemp 2>/dev/null || echo /tmp/probe9gag.$$)
-trap 'rm -f "$BODY"' EXIT
+trap 'rm -f "$BODY" "$BODY.img"' EXIT
 
-CONF=$(ls "$HOME"/.config/harbour-gagbook/harbour-gagbook.conf 2>/dev/null | head -1)
-[ -n "$CONF" ] || CONF=$(find "$HOME/.config" "$HOME/.local/share" -name 'harbour-gagbook.conf' 2>/dev/null | head -1)
+# GagBook's settings; also found when this runs in a devel-su root shell
+CONF=$(find "$HOME/.config" "$HOME/.local/share" /home/*/.config /home/*/.local/share \
+            -name 'harbour-gagbook.conf' 2>/dev/null | head -1)
 
 # QSettings stores byte arrays as @ByteArray(...)
 conf_value() {
@@ -82,9 +83,11 @@ if isinstance(posts, list):
         img = ((p.get('images') or {}).get('image700') or {}).get('url', '')
         print("      - %s %-8s nsfw=%s %s | image: %s"
               % (p.get('id'), p.get('type'), p.get('nsfw'), (p.get('title') or '')[:40],
-                 'yes' if img else 'MISSING'))
+                 img.split('/')[2] + '/...' + img[-14:] if img else 'MISSING'))
+    print("    ids:", ",".join(p.get('id', '?') for p in posts))
     if posts:
-        print("      post keys:", sorted(posts[0].keys()))
+        img = ((posts[0].get('images') or {}).get('image700') or {}).get('url', '')
+        open(sys.argv[1] + '.img', 'w').write(img)
 for key in ('groups', 'tags', 'interests', 'items', 'results'):
     v = data.get(key)
     if isinstance(v, list):
@@ -93,7 +96,8 @@ for key in ('groups', 'tags', 'interests', 'items', 'results'):
             print("      item keys:", sorted(v[0].keys()))
         for g in v[:60]:
             if isinstance(g, dict):
-                print("      -", {k: g.get(k) for k in ('id', 'name', 'key', 'url', 'listType', 'isSensitive', 'nsfw') if k in g})
+                print("      -", {k: g.get(k) for k in ('id', 'name', 'key', 'url', 'listType', 'isSensitive', 'nsfw',
+                                                       'value', 'count') if k in g})
             else:
                 print("      -", g)
 other = [k for k in data.keys() if k not in ('posts', 'groups', 'tags', 'interests', 'items', 'results')]
@@ -106,9 +110,21 @@ PY
 }
 
 probe() { # LABEL URL TOKEN
+    rm -f "$BODY.img"
     code=$(api_get "$2" "$3")
     echo "[$code] $1"
     summary
+}
+
+# check_image: does the first post's image of the last probe download?
+check_image() {
+    [ -s "$BODY.img" ] || return
+    img=$(cat "$BODY.img")
+    for ua in "GagBook/1.5.1" "$UA"; do
+        r=$(curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download} bytes' --max-time 20 \
+                 -H "User-Agent: $ua" -H 'Accept: image/*' "$img")
+        echo "    image download ($ua): $r"
+    done
 }
 
 echo "GagBook API probe, $(date -u +%Y-%m-%dT%H:%MZ)"
@@ -133,24 +149,35 @@ probe "type interest: humor"          "$API/v2/post-list/type/interest/interest/
 probe "interest-posts: humor"         "$API/v2/interest-posts/interest/humor/type/hot/itemCount/10/entryTypes/$TYPES" "$GUEST"
 probe "interest query: humor"         "$API/v2/post-list?group=1&type=hot&interest=humor&itemCount=10&entryTypes=$TYPES" "$GUEST"
 
+probe "trending, group default"       "$API/v2/post-list/group/default/type/trending/itemCount/10/entryTypes/$TYPES" "$GUEST"
+probe "interest humor, fresh"         "$API/v2/post-list/interest/humor/type/fresh/itemCount/10/entryTypes/$TYPES" "$GUEST"
+probe "interest humor, page 2"        "$API/v2/post-list/interest/humor/type/hot/itemCount/10/entryTypes/$TYPES/olderThan/a5VpEDL" "$GUEST"
+
 echo; echo "== Tags (guest)"
 probe "tag-search: cat"               "$API/v2/tag-search/query/cat/fromIndex/0/itemCount/10/entryTypes/$TYPES/offset/10/sort/asc" "$GUEST"
 probe "post-list tag: cat"            "$API/v2/post-list/tag/cat/type/hot/itemCount/10/entryTypes/$TYPES" "$GUEST"
 probe "type tag: cat"                 "$API/v2/post-list/type/tag/tag/cat/itemCount/10/entryTypes/$TYPES" "$GUEST"
 probe "tag-posts: cat"                "$API/v2/tag-posts/tag/cat/type/hot/itemCount/10/entryTypes/$TYPES" "$GUEST"
 probe "search-posts: cat"             "$API/v2/search-posts/query/cat/itemCount/10/entryTypes/$TYPES" "$GUEST"
+probe "tag-search: cat, from 10"      "$API/v2/tag-search/query/cat/fromIndex/10/itemCount/10/entryTypes/$TYPES/offset/10/sort/asc" "$GUEST"
+probe "tag-search: old meme (space)"  "$API/v2/tag-search/query/old%20meme/fromIndex/0/itemCount/10/entryTypes/$TYPES/offset/10/sort/asc" "$GUEST"
+probe "tag-search: old-meme (slug)"   "$API/v2/tag-search/query/old-meme/fromIndex/0/itemCount/10/entryTypes/$TYPES/offset/10/sort/asc" "$GUEST"
 probe "tag suggestions: ca"           "$API/v2/tag-suggest/query/ca" "$GUEST"
 probe "tag list"                      "$API/v2/tag-list" "$GUEST"
 
-if [ -n "$USER_TOKEN" ]; then
-    echo; echo "== Sensitive feeds (your login)"
-    probe "old NSFW section, group 12"    "$API/v2/post-list/group/12/type/hot/itemCount/10/entryTypes/$TYPES" "$USER_TOKEN"
-    probe "interest as group: girlnsfw"   "$API/v2/post-list/group/girlnsfw/type/hot/itemCount/10/entryTypes/$TYPES" "$USER_TOKEN"
-    probe "interest param: girlnsfw"      "$API/v2/post-list/interest/girlnsfw/type/hot/itemCount/10/entryTypes/$TYPES" "$USER_TOKEN"
-    probe "hot, group default (user)"     "$API/v2/post-list/group/default/type/hot/itemCount/10/entryTypes/$TYPES" "$USER_TOKEN"
-    echo "    same, as guest, for comparison:"
-    probe "interest as group: girlnsfw (guest)" "$API/v2/post-list/group/girlnsfw/type/hot/itemCount/10/entryTypes/$TYPES" "$GUEST"
-fi
+echo; echo "== Sensitive feeds"
+[ -n "$USER_TOKEN" ] || echo "    (not logged in in GagBook, or config not found: only guest results)"
+for who in guest user; do
+    if [ $who = guest ]; then tok=$GUEST; else tok=$USER_TOKEN; [ -n "$tok" ] || continue; fi
+    for interest in girlnsfw animensfw guys girlsfw; do
+        probe "interest $interest ($who)" "$API/v2/post-list/interest/$interest/type/hot/itemCount/10/entryTypes/$TYPES" "$tok"
+        check_image
+    done
+    probe "old NSFW section, group 12 ($who)" "$API/v2/post-list/group/12/type/hot/itemCount/10/entryTypes/$TYPES" "$tok"
+    check_image
+    probe "interest humor ($who)" "$API/v2/post-list/interest/humor/type/hot/itemCount/10/entryTypes/$TYPES" "$tok"
+    check_image
+done
 
 echo; echo "== Website API (no login)"
 for u in "$WEB/v1/interest-posts/interest/humor/type/hot" "$WEB/v1/tag-posts/tag/cat/type/hot" "$WEB/v1/search-posts?query=cat"; do
