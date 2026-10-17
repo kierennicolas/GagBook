@@ -333,8 +333,10 @@ void GagModel::refresh(RefreshType refreshType)
 
             m_lastId = "";
 
+            // Home feeds take the ids of the last 9 posts (since 1.4.2). Interests were
+            // checked (Oct 2026) with the id of the last post only, so send just that.
             const int end = m_gagList.size();
-            const int start = (end < 9 ? 0 : end - 9);
+            const int start = (m_feed.kind == GagFeed::Interest) ? end - 1 : (end < 9 ? 0 : end - 9);
             QString id;
 
             for (int i = start; i < end; i++) {
