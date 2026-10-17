@@ -46,13 +46,29 @@ Page {
         pageStack.pop();
     }
 
+    // Updates the rows in place: rebuilding the list on every key press made the list view
+    // take the keyboard focus away from the search field.
+    function setSuggestions(names) {
+        for (var i = 0; i < names.length; ++i) {
+            if (i < suggestionModel.count) {
+                if (suggestionModel.get(i).name !== names[i])
+                    suggestionModel.setProperty(i, "name", names[i]);
+            } else {
+                suggestionModel.append({ name: names[i] });
+            }
+        }
+        if (suggestionModel.count > names.length)
+            suggestionModel.remove(names.length, suggestionModel.count - names.length);
+    }
+
     function showLocalSuggestions() {
-        suggestionModel.clear();
-        if (query.length === 0)
-            return;
-        var tags = Tags.suggestions(query, appSettings.loggedIn, 20);
-        for (var i = 0; i < tags.length; ++i)
-            suggestionModel.append({ name: tags[i][0], count: 0 });
+        var names = [];
+        if (query.length > 0) {
+            var tags = Tags.suggestions(query, appSettings.loggedIn, 20);
+            for (var i = 0; i < tags.length; ++i)
+                names.push(tags[i][0]);
+        }
+        setSuggestions(names);
     }
 
     onSearchTextChanged: {
@@ -78,51 +94,57 @@ Page {
             // ignore answers for older text, keep the local list if 9GAG had nothing
             if (text !== searchPage.query || tags.length === 0)
                 return;
-            suggestionModel.clear();
+            var names = [];
             for (var i = 0; i < tags.length; ++i)
-                suggestionModel.append({ name: tags[i].name, count: tags[i].count });
+                names.push(tags[i].name);
+            searchPage.setSuggestions(names);
+        }
+    }
+
+    // The search field stays outside the list view, so changes to the list can't take
+    // the focus (and with it the keyboard) away from it.
+    Column {
+        id: searchHeader
+        width: parent.width
+
+        PageHeader { title: qsTr("Search tags") }
+
+        SearchField {
+            id: searchField
+            width: parent.width
+            focus: true
+            placeholderText: qsTr("Tag, e.g. cat or old meme")
+            inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+            onTextChanged: searchPage.searchText = text
+            EnterKey.enabled: text.trim().length > 0
+            EnterKey.iconSource: "image://theme/icon-m-search"
+            EnterKey.onClicked: searchPage.showTag(text)
+        }
+
+        // the typed text itself, so any tag can be shown
+        BackgroundItem {
+            width: parent.width
+            visible: searchPage.query.length > 0
+            onClicked: searchPage.showTag(searchPage.query)
+
+            Label {
+                anchors {
+                    left: parent.left; right: parent.right; margins: Theme.horizontalPageMargin
+                    verticalCenter: parent.verticalCenter
+                }
+                text: qsTr("Show posts tagged \u201c%1\u201d").arg(searchPage.query)
+                color: parent.highlighted ? Theme.highlightColor : Theme.primaryColor
+                elide: Text.ElideRight
+            }
         }
     }
 
     SilicaListView {
         id: listView
-        anchors.fill: parent
+        anchors { top: searchHeader.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        clip: true
         model: suggestionModel
-
-        header: Column {
-            width: listView.width
-
-            PageHeader { title: qsTr("Search tags") }
-
-            SearchField {
-                id: searchField
-                width: parent.width
-                placeholderText: qsTr("Tag, e.g. cat or old meme")
-                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                onTextChanged: searchPage.searchText = text
-                EnterKey.enabled: text.trim().length > 0
-                EnterKey.iconSource: "image://theme/icon-m-search"
-                EnterKey.onClicked: searchPage.showTag(text)
-                Component.onCompleted: forceActiveFocus()
-            }
-
-            // the typed text itself, so any tag can be shown
-            BackgroundItem {
-                width: parent.width
-                visible: searchPage.query.length > 0
-                onClicked: searchPage.showTag(searchPage.query)
-
-                Label {
-                    anchors {
-                        left: parent.left; right: parent.right; margins: Theme.horizontalPageMargin
-                        verticalCenter: parent.verticalCenter
-                    }
-                    text: qsTr("Show posts tagged “%1”").arg(searchPage.query)
-                    color: parent.highlighted ? Theme.highlightColor : Theme.primaryColor
-                    elide: Text.ElideRight
-                }
-            }
-        }
+        currentIndex: -1
 
         delegate: SimpleListItem {
             text: model.name
@@ -136,5 +158,11 @@ Page {
         }
 
         VerticalScrollDecorator {}
+    }
+
+    // open the keyboard once the page is shown
+    onStatusChanged: {
+        if (status === PageStatus.Active)
+            searchField.forceActiveFocus();
     }
 }

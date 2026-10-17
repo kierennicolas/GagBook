@@ -5,6 +5,9 @@
 # * date Author's Name <author's email> version-release
 # - Summary of changes
 
+* Sun Oct 18 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.6.1-1
+- Fix the keyboard closing while typing a tag search
+
 * Sun Oct 18 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.6.0-1
 - Replace the 2019 sections with 9GAG's current interests (Humor, Memes, Girl NSFW, ...)
 - Load the interest list from 9GAG, with a built-in list as fallback
