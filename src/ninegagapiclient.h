@@ -38,6 +38,7 @@
 
 class QNetworkReply;
 class QJsonObject;
+class QTimer;
 
 /*! Client for the undisclosed 9GAG mobile app API (api.9gag.com).
 
@@ -107,6 +108,7 @@ signals:
 
 private slots:
     void onSessionReplyFinished();
+    void onSessionTimeout();
 
 private:
     enum SessionRequestType {
@@ -130,6 +132,8 @@ private:
 
     bool canRenewUserSession() const;
     void startSessionRequest(SessionRequestType type);
+    void finishSessionRequest(SessionRequestType type, int httpStatus, int networkError,
+                              const QByteArray &body, bool timedOut);
     bool abortSessionRequest();
     void setSession(const QByteArray &token, qint64 expiry, bool guest);
     void clearUserSession(bool clearStoredLogin);
@@ -145,6 +149,7 @@ private:
 
     QNetworkReply *m_sessionReply;
     SessionRequestType m_sessionRequestType;
+    QTimer *m_sessionTimer;
 
     // login data of the running UserRequest/RenewRequest, or the stored login
     QString m_loginName;

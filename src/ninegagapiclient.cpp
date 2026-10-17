@@ -29,6 +29,7 @@
 #include <QNetworkReply>
 #include <QDateTime>
 #include <QSettings>
+#include <QTimer>
 #include <QUrlQuery>
 #include <QUuid>
 
@@ -88,6 +89,13 @@ const QByteArray PATH_SEGMENT_SAFE_CHARS = "@,+=:!$&'()*;";
 const qint64 TOKEN_EXPIRY_MARGIN_SECS = 60;
 const qint64 FALLBACK_TOKEN_LIFETIME_SECS = 60 * 60;
 
+// Give up on a guest-token or login request after this long.
+#ifdef GAGBOOK_TEST_SESSION_TIMEOUT_MSECS
+const int SESSION_TIMEOUT_MSECS = GAGBOOK_TEST_SESSION_TIMEOUT_MSECS;
+#else
+const int SESSION_TIMEOUT_MSECS = 30 * 1000;
+#endif
+
 // QSettings keys
 const QString SETTINGS_GROUP = QStringLiteral("apiSession");
 const QString KEY_DEVICE_UUID = QStringLiteral("deviceUuid");
@@ -135,8 +143,13 @@ qint64 tokenExpiryFromResponse(const QJsonObject &data, qint64 now)
  */
 NineGagApiClient::NineGagApiClient(NetworkManager *netMan, QObject *parent) :
     QObject(parent), m_netMan(netMan), m_tokenExpiry(0), m_isGuestSession(true),
-    m_sessionReply(0), m_sessionRequestType(GuestRequest), m_rememberLogin(false)
+    m_sessionReply(0), m_sessionRequestType(GuestRequest), m_sessionTimer(new QTimer(this)),
+    m_rememberLogin(false)
 {
+    m_sessionTimer->setSingleShot(true);
+    m_sessionTimer->setInterval(SESSION_TIMEOUT_MSECS);
+    connect(m_sessionTimer, &QTimer::timeout, this, &NineGagApiClient::onSessionTimeout);
+
     loadStoredSession();
 }
 
@@ -306,7 +319,7 @@ bool NineGagApiClient::isUserLoggedIn() const
 
 QString NineGagApiClient::userDisplayName() const
 {
-    return isUserLoggedIn() ? m_userName : QString();
+    return (m_isGuestSession && !canRenewUserSession()) ? QString() : m_userName;
 }
 
 bool NineGagApiClient::canRenewUserSession() const
@@ -394,6 +407,7 @@ void NineGagApiClient::startSessionRequest(SessionRequestType type)
     m_sessionRequestType = type;
     m_sessionReply = request(netReq);
     connect(m_sessionReply, &QNetworkReply::finished, this, &NineGagApiClient::onSessionReplyFinished);
+    m_sessionTimer->start();    // Qt 5.6 has no transfer timeout of its own
 }
 
 /*!
@@ -406,6 +420,7 @@ bool NineGagApiClient::abortSessionRequest()
     if (m_sessionReply == 0)
         return false;
 
+    m_sessionTimer->stop();
     m_sessionReply->disconnect(this);
     m_sessionReply->abort();
     m_sessionReply->deleteLater();
@@ -417,36 +432,78 @@ void NineGagApiClient::onSessionReplyFinished()
 {
     QNetworkReply *reply = m_sessionReply;
     m_sessionReply = 0;
+    m_sessionTimer->stop();
 
     if (reply == 0)
         return;
 
-    const SessionRequestType type = m_sessionRequestType;
+    // Don't use reply->errorString(): Qt puts the request URL into it, and the URL of a
+    // /v2/user-token request contains the password hash.
     const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const QString networkError = reply->errorString();
+    const int networkError = reply->error();
     const QByteArray body = reply->readAll();
     reply->deleteLater();
 
+    finishSessionRequest(m_sessionRequestType, httpStatus, networkError, body, false);
+}
+
+void NineGagApiClient::onSessionTimeout()
+{
+    QNetworkReply *reply = m_sessionReply;
+    if (reply == 0)
+        return;
+
+    m_sessionReply = 0;
+    reply->disconnect(this);
+    reply->abort();
+    reply->deleteLater();
+
+    finishSessionRequest(m_sessionRequestType, 0, QNetworkReply::TimeoutError, QByteArray(), true);
+}
+
+/*!
+ * \brief NineGagApiClient::finishSessionRequest Evaluates the answer to a session request.
+ *
+ * Only a JSON answer from the API that reports an error counts as a rejected login. Anything
+ * else (offline, timeout, captive portal, a Cloudflare page, rate limiting, server errors) is
+ * treated as temporary, so a stored login is kept.
+ */
+void NineGagApiClient::finishSessionRequest(SessionRequestType type, int httpStatus, int networkError,
+                                            const QByteArray &body, bool timedOut)
+{
     QJsonParseError parseError;
-    const QJsonObject root = QJsonDocument::fromJson(body, &parseError).object();
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
+    const bool isJson = (parseError.error == QJsonParseError::NoError && doc.isObject());
+    const QJsonObject root = doc.object();
     const QJsonObject data = root.value(QStringLiteral("data")).toObject();
     const QByteArray token = data.value(QStringLiteral("userToken")).toString().toUtf8();
-    QString apiError = apiErrorMessage(root);
+    const QString apiError = isJson ? apiErrorMessage(root) : QString();
 
-    // 0 = no HTTP answer at all (offline, DNS, TLS, timeout ...), 5xx = server trouble
-    const bool unreachable = (httpStatus == 0 || httpStatus >= 500);
-    const bool success = !unreachable && apiError.isEmpty() && httpStatus < 400 && !token.isEmpty();
+    const bool success = isJson && apiError.isEmpty() && httpStatus >= 200 && httpStatus < 400
+            && !token.isEmpty();
+    const bool rejected = !success && isJson && !apiError.isEmpty()
+            && httpStatus != 429 && httpStatus < 500;
 
-    if (!success) {
-        if (unreachable)
-            apiError = QStringLiteral("Couldn't reach 9GAG: %1").arg(networkError);
-        else if (apiError.isEmpty() && type != GuestRequest && (httpStatus == 401 || httpStatus == 403))
-            apiError = QStringLiteral("Wrong email or password.");
-        else if (apiError.isEmpty())
-            apiError = QStringLiteral("9GAG answered with an unexpected response (HTTP %1).").arg(httpStatus);
+    QString message;
+    if (success)
+        message = QString();
+    else if (rejected)
+        message = apiError;
+    else if (timedOut)
+        message = QStringLiteral("9GAG didn't answer in time. Check your connection and try again.");
+    else if (httpStatus == 0)
+        message = QStringLiteral("Couldn't connect to 9GAG (network error %1). "
+                                 "Check your connection and try again.").arg(networkError);
+    else if (httpStatus == 429)
+        message = QStringLiteral("9GAG is limiting requests right now. Try again in a few minutes.");
+    else if (httpStatus >= 500)
+        message = QStringLiteral("9GAG's server has a problem (HTTP %1). Try again later.").arg(httpStatus);
+    else
+        message = QStringLiteral("9GAG sent an unexpected answer (HTTP %1). Try again later.").arg(httpStatus);
 
-        qWarning() << "NineGagApiClient: session request failed, HTTP" << httpStatus << apiError;
-    }
+    if (!success)
+        qWarning() << "NineGagApiClient: session request failed, type" << type << "HTTP" << httpStatus
+                   << "network error" << networkError << "-" << message;
 
     switch (type) {
     case GuestRequest:
@@ -454,7 +511,7 @@ void NineGagApiClient::onSessionReplyFinished()
             setSession(token, tokenExpiryFromResponse(data, currentSecs()), true);
             emit sessionReady();
         } else {
-            emit sessionFailed(apiError);
+            emit sessionFailed(message);
         }
         break;
 
@@ -477,23 +534,23 @@ void NineGagApiClient::onSessionReplyFinished()
             emit sessionReady();
         }
         else if (type == UserRequest) {
-            // keep any stored login from before, but don't keep the rejected one
+            // keep any stored login from before, but don't keep the failed one
             loadStoredSession();
-            emit userLoginFinished(false, apiError);
+            emit userLoginFinished(false, message);
 
             if (!sessionIsValid())
                 requestSession();
         }
-        else if (unreachable) {
-            // keep the stored login, the phone is probably offline
-            emit sessionFailed(apiError);
+        else if (!rejected) {
+            // keep the stored login, the problem is probably temporary
+            emit sessionFailed(message);
         }
         else {
             // the stored login was rejected (password changed, account gone ...)
             clearUserSession(true);
             startSessionRequest(GuestRequest);
             emit userSessionEnded(QStringLiteral("9GAG didn't accept your saved login (%1). "
-                                                 "Log in again from the app settings.").arg(apiError));
+                                                 "Log in again from the app settings.").arg(message));
         }
         break;
     }

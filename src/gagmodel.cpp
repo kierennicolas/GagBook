@@ -242,6 +242,14 @@ void GagModel::refresh(RefreshType refreshType)
                 Qt::UniqueConnection);
     }
 
+    // Connect the results before the request starts: getting a session can already fail,
+    // and that failure has to stop the busy state too.
+    GagRequest *gagReq = m_manager->gagRequest();
+    connect(gagReq, SIGNAL(fetchGagsSuccess(QList<GagObject>)), this, SLOT(onSuccess(QList<GagObject>)),
+            Qt::UniqueConnection);
+    connect(gagReq, SIGNAL(fetchGagsFailure(QString)), this, SLOT(onFailure(QString)), Qt::UniqueConnection);
+    connect(gagReq, &GagRequest::reachedEndOfList, this, &GagModel::onEndOfList, Qt::UniqueConnection);
+
     if (!m_gagList.isEmpty()) {
         if (refreshType == RefreshAll) {
             beginRemoveRows(QModelIndex(), 0, m_gagList.count() - 1);
@@ -330,14 +338,7 @@ void GagModel::changeLikes(const QString &id, int likes)
 
 void GagModel::startRequest()
 {
-    GagRequest *gagReq = m_manager->gagRequest();
-
-    connect(gagReq, SIGNAL(fetchGagsSuccess(QList<GagObject>)), this, SLOT(onSuccess(QList<GagObject>)),
-            Qt::UniqueConnection);
-    connect(gagReq, SIGNAL(fetchGagsFailure(QString)), this, SLOT(onFailure(QString)), Qt::UniqueConnection);
-    connect(gagReq, &GagRequest::reachedEndOfList, this, &GagModel::onEndOfList, Qt::UniqueConnection);
-
-    gagReq->fetchGags(m_groupId, m_section, m_lastId);
+    m_manager->gagRequest()->fetchGags(m_groupId, m_section, m_lastId);
 }
 
 void GagModel::onEndOfList()

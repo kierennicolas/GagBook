@@ -58,7 +58,14 @@ void AppSettings::readSettings()
 
 void AppSettings::setDefaultSettings()
 {
-    m_settings->clear();
+    // Reset everything except the API session kept by NineGagApiClient (device id, login).
+    // That group is written before AppSettings exists, so clear() would wipe the device id.
+    foreach (const QString &key, m_settings->childKeys())
+        m_settings->remove(key);
+    foreach (const QString &group, m_settings->childGroups()) {
+        if (group != QLatin1String("apiSession"))
+            m_settings->remove(group);
+    }
 
     m_settings->setValue("version", "0.2");
 

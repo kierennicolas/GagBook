@@ -12,6 +12,8 @@
 - Show the logged in user in the app settings
 - Fall back to a guest session when the login expires and say so
 - Report errors while loading posts instead of loading forever
+- Give up on a login that gets no answer within 30 seconds
+- Build the RPM in GitHub Actions
 - Hide the vote buttons, voting isn't possible through the app API yet
 
 * Wed May 22 2019 Alexander Seibel <Alex217@t-online.de> 1.4.2-1

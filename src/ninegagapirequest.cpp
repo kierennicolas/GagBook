@@ -72,6 +72,7 @@ NineGagApiRequest::NineGagApiRequest(NetworkManager *networkManager, NineGagApiC
 void NineGagApiRequest::startGagsRequest()
 {
     if (m_apiClient->sessionIsValid()) {
+        m_waitingForSession = false;    // don't fetch again when a pending session arrives
         emit readyToRequestGags();
         return;
     }
@@ -88,12 +89,21 @@ bool NineGagApiRequest::retryAfterGagsError(QNetworkReply *reply)
 {
     const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-    if (httpStatus != 401 || m_retriedAfterAuthError)
+    if (httpStatus != 401) {
+        m_retriedAfterAuthError = false;
         return false;
+    }
+
+    // the token is no good either way, the next request needs a new session
+    m_apiClient->invalidateSession();
+
+    if (m_retriedAfterAuthError) {
+        m_retriedAfterAuthError = false;    // allow one retry again for the next refresh
+        return false;
+    }
 
     qDebug() << "The API rejected the session token, requesting a new session...";
     m_retriedAfterAuthError = true;
-    m_apiClient->invalidateSession();
     startGagsRequest();
     return true;
 }
@@ -132,7 +142,8 @@ QList<GagObject> NineGagApiRequest::parseGags(const QByteArray &response)
 
         /* if reached end of the list and there are no further posts
          * (e.g. possible inside 'Fresh' section) */
-        if (rootObj.value("data").toObject().value("didEndOfList").toDouble())
+        // 'didEndOfList' has been sent as a number, accept a bool as well
+        if (rootObj.value("data").toObject().value("didEndOfList").toVariant().toBool())
         {
             qDebug() << "Reached end of the list. There are no further posts to fetch.";
             emit reachedEndOfList();
@@ -338,6 +349,7 @@ void NineGagApiRequest::onSessionFailed(const QString &errorMessage)
 {
     if (m_waitingForSession) {
         m_waitingForSession = false;
+        m_retriedAfterAuthError = false;
         emit fetchGagsFailure(errorMessage);
     }
 }
