@@ -73,7 +73,11 @@ jobs:
             tail -n 60 build.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          msg=$(tail -n 60 build.log | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          # annotations are short, so only send the error lines, cut to 300 characters each
+          errors=$(grep -E -i -m 40 'error|fatal|undefined reference|no such file|nothing provides|not found' build.log \
+                   | grep -v -E '^\+ |Werror|-Wformat' | cut -c1-300 || true)
+          [ -n "$errors" ] || errors=$(tail -n 15 build.log | cut -c1-300)
+          msg=$(printf '%s\n' "$errors" | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Build failed::${msg}"
 
       - name: Upload the RPM
