@@ -14,7 +14,7 @@ GagBook is an unofficial Sailfish OS app for the [9GAG.com](https://9gag.com) we
 
 - Simple, smooth and native Sailfish Silica UI
 - View posts in different sections, e.g. Hot, Trending, Fresh, etc.
-- Account login (with email only) and voting support
+- Account login with your 9GAG email address (or username) and password
 - View comments of each post
 - Save image and video files
 
@@ -25,6 +25,14 @@ This is a fork of the original GagBook app initially developed by [@dicksonleong
 Initially GagBook used webscraping using QtWebKitWidgets to get its data. I started to work on GagBook back in December 2017 after the app was not working anymore due to a changed website, that was JS rendered since then.
 Now GagBook gets its data from the undisclosed official 9GAG.com API.
 
+### Login
+
+Since version 1.5.0 GagBook logs in through the 9GAG app API (`api.9gag.com/v2/user-token`), the same endpoint the official Android app uses. The 9gag.com website, including its old `/login` form, sits behind a Cloudflare challenge that an app like this can't pass.
+
+- Only email/username and password logins work. Accounts that only sign in with Facebook, Google or Apple can't log in.
+- The app stores the session token, not your password. With "Stay logged in" switched on, it also stores your login name and the MD5 hash of your password that the API expects, so it can renew the session when the token expires. Logging out removes both.
+- The API is undocumented, so 9GAG can change or close it at any time.
+
 I will update GagBook to fix bugs and implement new features.
 
 ## Contacts
@@ -33,7 +41,7 @@ I will update GagBook to fix bugs and implement new features.
 
 ## License
 
-GagBook is licensed under the Simplified BSD License, see the [LICENSE.md](LICENSE.md) file for more details.
+GagBook is licensed under the Simplified BSD License, see the [LICENSE](LICENSE) file for more details.
 
 [VideoComponent.qml](sailfish/qml/VideoComponent.qml) was implemented by [@llelectronics](https://github.com/llelectronics) and is licensed under GPLv3.
 
