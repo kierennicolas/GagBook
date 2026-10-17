@@ -34,6 +34,10 @@
 
 #include <QGuiApplication>
 #include <QQuickView>
+// Sailfish OS 5 no longer pulls these in through sailfishapp.h
+#include <QQmlContext>
+#include <QQmlEngine>
+#include <QtQml>
 
 #include "../src/gagbookmanager.h"
 #include "../src/gagmodel.h"
