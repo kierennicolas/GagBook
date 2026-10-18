@@ -40,7 +40,7 @@ I will update GagBook to fix bugs and implement new features.
 
 ### Comments and posts
 
-- Comments go to 9GAG's comment service with the comment key that comes with the login (`commentAuth`). Sessions from GagBook 1.6 and older don't have it: log out and in again once.
+- Comments go to 9GAG's comment service with the comment key that comes with the login (`commentAuth`). Sessions from GagBook 1.6 and older don't have it: with "Stay logged in" GagBook renews the login to get it, otherwise log out and in again once.
 - Posts are sent in the three steps the 9GAG app uses (`/v2/post-submit`: image, details, creation). 9GAG may review a post before others see it, and refuses posts from accounts that are unverified or too new; GagBook shows 9GAG's reason.
 
 ### Sections and tags

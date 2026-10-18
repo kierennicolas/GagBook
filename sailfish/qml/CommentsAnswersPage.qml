@@ -165,8 +165,31 @@ Page {
         parentId: childCommentsPage.parentId
         replyToName: childCommentsPage.parentName
         canStopReplying: false
+        maxTextHeight: childCommentsPage.height / 4
+    }
 
-        onPosted: commentModel.replyAdded(parentId)
+    // the comments page puts new replies into the model (it handles them even when this
+    // page is closed); show the new one, and keep the count up to date
+    Connections {
+        target: gagbookManager
+        onCommentAdded: {
+            if (postUrl === childCommentsPage.postUrl && parentId === childCommentsPage.parentId)
+                commentsListView.positionViewAtEnd();
+        }
+    }
+
+    Connections {
+        target: commentModel
+        onCountsChanged: {
+            var count = commentModel.replyCount(childCommentsPage.parentId);
+            if (count >= 0)
+                childCommentsPage.commentsCount = count;
+        }
+        // a reload drops the thread this page shows
+        onModelReset: {
+            if (childCommentsPage.status === PageStatus.Active)
+                pageStack.pop();
+        }
     }
 
     DelegateModel {

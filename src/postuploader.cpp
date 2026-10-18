@@ -113,6 +113,11 @@ QString PostUploader::statusText() const
     return m_statusText;
 }
 
+bool PostUploader::canCancel() const
+{
+    return m_step == Session || m_step == Image || m_step == Meta;
+}
+
 QStringList PostUploader::splitTags(const QString &tags)
 {
     QStringList result;
@@ -160,20 +165,59 @@ void PostUploader::upload(const QString &filePath, const QString &title, const Q
     }
 
     NineGagApiClient *client = m_manager ? m_manager->apiClient() : 0;
-    if (client == 0 || client->isGuestSession() || !client->sessionIsValid()) {
+    if (client == 0 || !client->isUserLoggedIn()) {
         emit failed(QStringLiteral("Log in from the app settings to post."));
         return;
     }
 
+    m_filePath = localPath(filePath);
     m_title = title.simplified();
     m_tags = splitTags(tags);
     m_nsfw = nsfw;
-    m_uploadId = client->newUploadId();
     m_attempts = 0;
 
-    QNetworkReply *reply = client->uploadImage(m_uploadId, localPath(filePath));
+    // An expired token needs renewing first, and sessions from before GagBook 1.7 lack the
+    // user id the upload id is made of; a stored login fixes both.
+    if (!client->sessionIsValid() || client->userId().isEmpty()) {
+        if (!client->canRenewUserSession()) {
+            emit failed(QStringLiteral("Log out and in again from the app settings to post."));
+            return;
+        }
+        setStep(Session, QStringLiteral("Renewing the login..."), 0.01);
+        connect(client, &NineGagApiClient::sessionReady, this, &PostUploader::onSessionReady, Qt::UniqueConnection);
+        connect(client, &NineGagApiClient::sessionFailed, this, &PostUploader::onSessionFailed, Qt::UniqueConnection);
+        client->requestSession();
+        return;
+    }
+    sendImage();
+}
+
+void PostUploader::onSessionReady()
+{
+    if (m_step != Session)
+        return;
+    NineGagApiClient *client = m_manager->apiClient();
+    if (client->isGuestSession() || client->userId().isEmpty()) {
+        finishWithError(QStringLiteral("Log out and in again from the app settings to post."));
+        return;
+    }
+    sendImage();
+}
+
+void PostUploader::onSessionFailed(const QString &message)
+{
+    if (m_step == Session)
+        finishWithError(message.isEmpty() ? QStringLiteral("Couldn't renew the login to 9GAG.") : message);
+}
+
+void PostUploader::sendImage()
+{
+    NineGagApiClient *client = m_manager->apiClient();
+    m_uploadId = client->newUploadId();
+
+    QNetworkReply *reply = client->uploadImage(m_uploadId, m_filePath);
     if (reply == 0) {
-        emit failed(QStringLiteral("Couldn't read the image."));
+        finishWithError(QStringLiteral("Couldn't read the image."));
         return;
     }
 
@@ -302,8 +346,9 @@ void PostUploader::onMetaFinished()
     // The app creates the post once both the image and the details are ready, and sends the
     // details again until they are. Without status fields there is nothing to wait for.
     const bool hasStatus = data.contains(QStringLiteral("mediaStatus")) || data.contains(QStringLiteral("metaStatus"));
-    const bool ready = data.value(QStringLiteral("mediaStatus")).toInt() == StatusReady
-            && data.value(QStringLiteral("metaStatus")).toInt() == StatusReady;
+    // numbers, or numbers as text
+    const bool ready = data.value(QStringLiteral("mediaStatus")).toVariant().toInt() == StatusReady
+            && data.value(QStringLiteral("metaStatus")).toVariant().toInt() == StatusReady;
 
     if (!hasStatus || ready) {
         m_attempts = 0;

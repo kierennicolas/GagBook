@@ -52,6 +52,8 @@ class PostUploader : public QObject
     Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged)
     /*! What the upload is doing, to show to the user. */
     Q_PROPERTY(QString statusText READ statusText NOTIFY progressChanged)
+    /*! False once the post is being created: stopping then could still leave a post. */
+    Q_PROPERTY(bool canCancel READ canCancel NOTIFY progressChanged)
 
 public:
     explicit PostUploader(QObject *parent = 0);
@@ -61,6 +63,7 @@ public:
     bool isBusy() const;
     qreal progress() const;
     QString statusText() const;
+    bool canCancel() const;
 
     /*! Title length the 9GAG app allows (its remote-config defaults). */
     static const int TitleMinLength = 6;
@@ -83,7 +86,8 @@ public:
 signals:
     void busyChanged();
     void progressChanged();
-    /*! The post was created; \p postUrl is its 9GAG link (can be empty). */
+    /*! The post was created; \p postUrl is its 9GAG link. Both are empty if 9GAG accepted
+        the post but didn't say yet which post it became. */
     void succeeded(const QString &postUrl, const QString &postId);
     void failed(const QString &message);
 
@@ -94,9 +98,13 @@ private slots:
     void onCreationFinished();
     void sendMeta();
     void sendCreation();
+    void onSessionReady();
+    void onSessionFailed(const QString &message);
 
 private:
-    enum Step { Idle, Image, Meta, Creation };
+    enum Step { Idle, Session, Image, Meta, Creation };
+
+    void sendImage();
 
     void setStep(Step step, const QString &text, qreal progress);
     void finishWithError(const QString &message);
@@ -111,6 +119,7 @@ private:
     qreal m_progress;
     int m_attempts;
 
+    QString m_filePath;
     QString m_uploadId;
     QString m_title;
     QStringList m_tags;

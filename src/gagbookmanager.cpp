@@ -33,7 +33,9 @@
 #include <QtCore/QDebug>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QDateTime>
 #include <QtCore/QJsonObject>
+#include <QtCore/QTimer>
 #include <QtNetwork/QNetworkReply>
 
 #include "networkmanager.h"
@@ -46,8 +48,17 @@ GagBookManager::GagBookManager(QObject *parent) :
     QObject(parent), m_isBusy(false), m_settings(0),
     m_netManager(new NetworkManager(this)), m_apiClient(0), m_gagRequest(0),
     m_sectionsWanted(false), m_sectionsUpdated(false), m_sectionsReply(0),
-    m_suggestWanted(false), m_suggestReply(0), m_commentReply(0)
+    m_suggestWanted(false), m_suggestReply(0), m_commentReply(0), m_commentTimer(new QTimer(this)),
+    m_lastCommentRequestId(0), m_commentRenewing(false), m_commentRenewed(false)
 {
+    m_commentTimer->setSingleShot(true);
+#ifdef GAGBOOK_TEST_COMMENT_TIMEOUT_MSECS
+    m_commentTimer->setInterval(GAGBOOK_TEST_COMMENT_TIMEOUT_MSECS);     // only for tests
+#else
+    m_commentTimer->setInterval(30000);
+#endif
+    connect(m_commentTimer, &QTimer::timeout, this, &GagBookManager::onCommentTimeout);
+
     GagImageDownloader::initializeCache();
     connect(m_netManager, SIGNAL(downloadCounterChanged()), SIGNAL(downloadCounterChanged()));
 
@@ -98,7 +109,7 @@ bool GagBookManager::canComment() const
 
 bool GagBookManager::isCommentBusy() const
 {
-    return m_commentReply != 0;
+    return m_commentReply != 0 || m_commentRenewing || !m_commentQueue.isEmpty();
 }
 
 AppSettings *GagBookManager::settings() const
@@ -241,11 +252,23 @@ void GagBookManager::sendPendingRequests()
 
 void GagBookManager::onSessionReady()
 {
+    // a renewed login brings a new comment key
+    emit userNameChanged();
+    if (m_commentRenewing) {
+        m_commentRenewing = false;
+        m_commentRenewed = true;
+        sendNextCommentRequest();
+    }
     sendPendingRequests();
 }
 
 void GagBookManager::onSessionFailed()
 {
+    if (m_commentRenewing) {
+        m_commentRenewing = false;
+        failCommentRequests(QStringLiteral("Couldn't renew the login to 9GAG. Try again later."));
+    }
+
     // keep the built-in sections and local suggestions
     m_sectionsWanted = false;
     if (m_suggestWanted) {
@@ -386,40 +409,89 @@ void GagBookManager::onSuggestReplyFinished()
     emit tagSuggestions(text, tags);
 }
 
-void GagBookManager::addComment(const QString &postUrl, const QString &text, const QString &parentId)
+int GagBookManager::addComment(const QString &postUrl, const QString &text, const QString &parentId)
 {
     const QString trimmed = text.trimmed();
-    if (m_commentReply != 0 || trimmed.isEmpty())
-        return;
-
+    if (trimmed.isEmpty())
+        return 0;
     if (!m_apiClient->canComment()) {
-        emit commentFailure(QStringLiteral("Log in again from the app settings to write comments."));
-        return;
+        emit commentFailure(QStringLiteral("Log in again from the app settings to write comments."), 0);
+        return 0;
     }
-
-    m_commentReply = m_apiClient->addComment(postUrl, trimmed, parentId);
-    m_commentReply->setParent(this);
-    m_commentReply->setProperty("postUrl", postUrl);
-    connect(m_commentReply, &QNetworkReply::finished, this, &GagBookManager::onCommentReplyFinished);
-    emit commentBusyChanged();
+    return queueCommentRequest(false, postUrl, trimmed, parentId);
 }
 
-void GagBookManager::deleteComment(const QString &postUrl, const QString &commentId)
+int GagBookManager::deleteComment(const QString &postUrl, const QString &commentId)
 {
-    if (m_commentReply != 0 || commentId.isEmpty())
+    if (commentId.isEmpty())
+        return 0;
+    if (!m_apiClient->canComment()) {
+        emit commentFailure(QStringLiteral("Log in again from the app settings to delete comments."), 0);
+        return 0;
+    }
+    return queueCommentRequest(true, postUrl, QString(), commentId);
+}
+
+int GagBookManager::queueCommentRequest(bool isDelete, const QString &postUrl, const QString &text,
+                                        const QString &id)
+{
+    CommentRequest request;
+    request.id = ++m_lastCommentRequestId;
+    request.isDelete = isDelete;
+    request.postUrl = postUrl;
+    request.text = text;
+    request.targetId = id;
+
+    const bool wasBusy = isCommentBusy();
+    m_commentQueue.append(request);
+    if (!wasBusy)
+        emit commentBusyChanged();
+    sendNextCommentRequest();
+    return request.id;
+}
+
+void GagBookManager::sendNextCommentRequest()
+{
+    if (m_commentReply != 0 || m_commentRenewing || m_commentQueue.isEmpty())
         return;
 
-    if (!m_apiClient->canComment()) {
-        emit commentFailure(QStringLiteral("Log in again from the app settings to delete comments."));
+    if (!m_apiClient->hasValidCommentKey()) {
+        // sessions from before 1.7 have no key, and keys expire: a stored login gets a new one
+        if (m_apiClient->canRenewUserSession() && !m_commentRenewed) {
+            m_commentRenewing = true;
+            m_apiClient->requestSession();      // continues in onSessionReady() or onSessionFailed()
+            return;
+        }
+        failCommentRequests(QStringLiteral("Log out and in again from the app settings to write comments."));
         return;
     }
 
-    m_commentReply = m_apiClient->deleteComment(postUrl, commentId);
+    m_currentComment = m_commentQueue.takeFirst();
+    const CommentRequest &request = m_currentComment;
+    m_commentReply = request.isDelete ? m_apiClient->deleteComment(request.postUrl, request.targetId)
+                                      : m_apiClient->addComment(request.postUrl, request.text, request.targetId);
     m_commentReply->setParent(this);
-    m_commentReply->setProperty("postUrl", postUrl);
-    m_commentReply->setProperty("deletedId", commentId);
     connect(m_commentReply, &QNetworkReply::finished, this, &GagBookManager::onCommentReplyFinished);
+    m_commentTimer->start();
+}
+
+void GagBookManager::failCommentRequests(const QString &message)
+{
+    const QList<CommentRequest> failed = m_commentQueue;
+    m_commentQueue.clear();
+    m_commentRenewed = false;
     emit commentBusyChanged();
+    foreach (const CommentRequest &request, failed)
+        emit commentFailure(message, request.id);
+}
+
+void GagBookManager::onCommentTimeout()
+{
+    if (m_commentReply != 0) {
+        qWarning() << "GagBookManager: comment request timed out";
+        m_commentReply->setProperty("timedOut", true);
+        m_commentReply->abort();     // finishes the reply
+    }
 }
 
 bool GagBookManager::isOwnUser(const QString &userId, const QString &accountId) const
@@ -440,15 +512,16 @@ void GagBookManager::onCommentReplyFinished()
 {
     QNetworkReply *reply = m_commentReply;
     m_commentReply = 0;
+    m_commentTimer->stop();
     reply->deleteLater();
-    emit commentBusyChanged();
+    const CommentRequest request = m_currentComment;
 
-    const QString postUrl = reply->property("postUrl").toString();
-    const QString deletedId = reply->property("deletedId").toString();
     const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool timedOut = reply->property("timedOut").toBool();
 
     // answers look like {"status": "OK"|"ERROR", "code": ..., "error": ..., "payload": {...}}
-    const QJsonObject root = QJsonDocument::fromJson(reply->readAll()).object();
+    const QByteArray body = reply->readAll();
+    const QJsonObject root = QJsonDocument::fromJson(body).object();
     const QString status = root.value(QStringLiteral("status")).toString();
     const QString code = root.value(QStringLiteral("code")).toString();
     const QString error = root.value(QStringLiteral("error")).toString();
@@ -456,32 +529,60 @@ void GagBookManager::onCommentReplyFinished()
     const QJsonObject payload = root.value(QStringLiteral("payload")).toObject();
     const bool statusOk = status.compare(QLatin1String("OK"), Qt::CaseInsensitive) == 0
             || status.compare(QLatin1String("Success"), Qt::CaseInsensitive) == 0;
-    const bool success = httpStatus >= 200 && httpStatus < 300 && code.isEmpty() && error.isEmpty()
-            && (statusOk || payload.contains(QStringLiteral("comment")));
-
-    if (success) {
-        if (deletedId.isEmpty())
-            emit commentAdded(postUrl);
-        else
-            emit commentDeleted(postUrl, deletedId);
-        return;
-    }
+    // an empty answer to a successful request counts as done
+    const bool success = !timedOut && httpStatus >= 200 && httpStatus < 300 && code.isEmpty() && error.isEmpty()
+            && (statusOk || payload.contains(QStringLiteral("comment")) || body.trimmed().isEmpty());
 
     QString message;
-    if (code == QLatin1String("CODE_COMMENT_RATE_LIMIT"))
-        message = QStringLiteral("You're commenting too fast. Wait a moment and try again.");
-    else if (code == QLatin1String("NO_QUOTA"))
-        message = QStringLiteral("9GAG doesn't allow more comments from your account right now.");
-    else if (!error.isEmpty())
-        message = error;
-    else if (httpStatus == 0)
-        message = QStringLiteral("Couldn't connect to 9GAG. Check your connection and try again.");
-    else if (deletedId.isEmpty())
-        message = QStringLiteral("9GAG didn't accept the comment (HTTP %1).").arg(httpStatus);
-    else
-        message = QStringLiteral("9GAG didn't delete the comment (HTTP %1).").arg(httpStatus);
+    if (!success) {
+        if (code == QLatin1String("CODE_COMMENT_RATE_LIMIT"))
+            message = QStringLiteral("You're commenting too fast. Wait a moment and try again.");
+        else if (code == QLatin1String("NO_QUOTA"))
+            message = QStringLiteral("9GAG doesn't allow more comments from your account right now.");
+        else if (!error.isEmpty())
+            message = error;
+        else if (timedOut)
+            message = QStringLiteral("9GAG didn't answer. Check your connection and try again.");
+        else if (httpStatus == 0)
+            message = QStringLiteral("Couldn't connect to 9GAG. Check your connection and try again.");
+        else if (request.isDelete)
+            message = QStringLiteral("9GAG didn't delete the comment (HTTP %1).").arg(httpStatus);
+        else
+            message = QStringLiteral("9GAG didn't accept the comment (HTTP %1).").arg(httpStatus);
+        qWarning() << "GagBookManager: comment request failed, HTTP" << httpStatus << "status" << status
+                   << "code" << code << "error" << error;
+    }
 
-    qWarning() << "GagBookManager: comment request failed, HTTP" << httpStatus << "status" << status
-               << "code" << code << "error" << error;
-    emit commentFailure(message);
+    // the next request goes out before the answer is handed on
+    if (m_commentQueue.isEmpty())
+        m_commentRenewed = false;
+    sendNextCommentRequest();
+    if (!isCommentBusy())
+        emit commentBusyChanged();
+
+    if (!success) {
+        emit commentFailure(message, request.id);
+    } else if (request.isDelete) {
+        emit commentDeleted(request.postUrl, request.targetId, request.id);
+    } else {
+        QVariantMap comment = payload.value(QStringLiteral("comment")).toObject().toVariantMap();
+        if (!comment.isEmpty()) {
+            // fill in what the list needs if the answer leaves it out
+            if (!comment.contains(QStringLiteral("user"))) {
+                QVariantMap user;
+                user.insert(QStringLiteral("displayName"), userName());
+                user.insert(QStringLiteral("userId"), userId());
+                user.insert(QStringLiteral("accountId"), accountId());
+                comment.insert(QStringLiteral("user"), user);
+            }
+            if (comment.value(QStringLiteral("timestamp")).toLongLong() <= 0)
+                comment.insert(QStringLiteral("timestamp"), QDateTime::currentMSecsSinceEpoch() / 1000);
+            if (comment.value(QStringLiteral("mediaText")).toString().isEmpty()
+                    && comment.value(QStringLiteral("text")).toString().isEmpty())
+                comment.insert(QStringLiteral("text"), request.text.toHtmlEscaped());
+            if (!comment.contains(QStringLiteral("type")))
+                comment.insert(QStringLiteral("type"), QStringLiteral("text"));
+        }
+        emit commentAdded(request.postUrl, request.targetId, comment, request.id);
+    }
 }

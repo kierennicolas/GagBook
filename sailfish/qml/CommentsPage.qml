@@ -177,9 +177,21 @@ Page {
         id: commentBox
         anchors.bottom: parent.bottom
         postUrl: commentsPage.gagURL.toString()
+        maxTextHeight: commentsPage.height / 4
+    }
 
-        onPosted: {
-            if (parentId.length > 0) {
+    // This page stays under the answers page, so it also handles what is posted or
+    // deleted there, even after that page was closed.
+    Connections {
+        target: gagbookManager
+        onCommentAdded: {
+            if (postUrl !== commentBox.postUrl)
+                return;
+            if (commentModel.addPostedComment(parentId, comment)) {
+                if (parentId.length === 0)
+                    commentsListView.positionViewAtBeginning();
+            } else if (parentId.length > 0) {
+                // 9GAG didn't send the comment back: load it
                 commentModel.replyAdded(parentId);
             } else if (commentModel.sorting !== CommentModel.Fresh) {
                 // newest first, so the new comment is at the top (changing it reloads)
@@ -189,11 +201,6 @@ Page {
                 commentModel.refresh();
             }
         }
-    }
-
-    // this page stays under the answers page, so it also handles deletes made there
-    Connections {
-        target: gagbookManager
         onCommentDeleted: {
             if (postUrl === commentBox.postUrl)
                 commentModel.removeCommentById(commentId);
@@ -218,6 +225,8 @@ Page {
             sortingMenuItem.text = getSortingString()
             commentModel.refresh()
         }
+
+        onCountsChanged: commentsPage.commentsCount = commentModel.totalCommentCount()
 
         onLoadingStatusChanged: {
             // update commentsCount property

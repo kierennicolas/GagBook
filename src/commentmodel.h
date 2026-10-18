@@ -124,18 +124,31 @@ public:
 
     Q_INVOKABLE void downloadMedia(const QModelIndex &index);
 
-    /*! A reply to the comment \p parentId was posted: loads it if the thread's replies are
-        loaded, otherwise reloads the list. */
+    /*! Puts the comment the user just posted into the list: a comment (\p parentId empty) at
+        the top, a reply at the end of its thread if the thread's replies are all loaded
+        (otherwise it's counted and comes with the remaining replies). \p comment is the
+        comment as the comment service returned it. Returns false if it can't be placed
+        (no comment, or the thread isn't in the list). While comments load, the change waits. */
+    Q_INVOKABLE bool addPostedComment(const QString &parentId, const QVariantMap &comment);
+
+    /*! A reply to the comment \p parentId was posted but not returned: loads it if the
+        thread's replies are loaded, otherwise reloads the list. */
     Q_INVOKABLE void replyAdded(const QString &parentId);
 
-    /*! Takes the deleted comment \p commentId out of the list. Returns false if it isn't in it. */
+    /*! Takes the deleted comment \p commentId out of the list. Returns false if it isn't in it.
+        While comments load, the change waits. */
     Q_INVOKABLE bool removeCommentById(const QString &commentId);
+
+    /*! The number of replies to the comment \p commentId (loaded or not), -1 if it isn't in the list. */
+    Q_INVOKABLE int replyCount(const QString &commentId) const;
 
 signals:
     void isEmptyChanged(bool value);
     void loadingStatusChanged(LoadingStatus status);
     void sortingChanged(Sorting sorting);
     void loadingFailure(QString errorMsg);
+    /*! The number of comments of the post or of a thread changed without a reload. */
+    void countsChanged();
 
 protected:
     /* Reimplementations for a lazy population of the model data */
@@ -157,6 +170,11 @@ protected:
 
     void updateIsEmpty();
 
+    bool isLoading() const;
+    bool applyPostedComment(const QString &parentId, const QVariantMap &comment);
+    bool applyRemoval(const QString &commentId);
+    void applyPendingChanges();
+
 protected slots:
     void setLoadingStatus(LoadingStatus status);
     void onFetchMoreFinished(const QList<CommentObject *> &commentList);
@@ -172,6 +190,15 @@ private:
     Sorting m_sorting;
 
     QModelIndex m_currentParentIndex;
+
+    // changes made while comments load, applied once they're in (a running fetch keeps the
+    // index of its parent, which must not move)
+    struct PendingChange {
+        QString parentId;       // posted comment: thread, empty for a top-level comment
+        QVariantMap comment;    // posted comment, empty for a removal
+        QString removedId;      // removal
+    };
+    QList<PendingChange> m_pendingChanges;
 
     GagBookManager *m_manager;
 };

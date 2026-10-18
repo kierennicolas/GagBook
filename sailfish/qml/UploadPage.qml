@@ -42,6 +42,11 @@ Page {
 
     readonly property string problem: uploader.validate(filePath, titleField.text, tagsField.text)
 
+    // a file:// address for a path with any characters (# and ? included)
+    function fileUrl(path) {
+        return path ? "file://" + path.split("/").map(encodeURIComponent).join("/") : "";
+    }
+
     // leaving the page would stop the upload
     backNavigation: !uploader.busy
 
@@ -118,13 +123,19 @@ Page {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     sourceSize.width: width
-                    source: uploadPage.filePath ? "file://" + uploadPage.filePath : ""
+                    source: uploadPage.fileUrl(uploadPage.filePath)
                     visible: status === Image.Ready
+                }
+
+                BusyIndicator {
+                    anchors.centerIn: parent
+                    size: BusyIndicatorSize.Medium
+                    running: preview.status === Image.Loading
                 }
 
                 Label {
                     anchors.centerIn: parent
-                    visible: !preview.visible
+                    visible: !preview.visible && preview.status !== Image.Loading
                     color: chooseItem.highlighted ? Theme.highlightColor : Theme.primaryColor
                     text: uploadPage.filePath ? "Can't show the image, tap to choose another" : "Choose an image"
                 }
@@ -137,6 +148,8 @@ Page {
                 // 9GAG takes 6 to 120 characters (PostUploader::TitleMinLength/TitleMaxLength)
                 label: "Title, %1 of 120 characters".arg(text.trim().length)
                 placeholderText: "Title"
+                // an old error shouldn't hide what is still missing
+                onTextChanged: if (!uploader.busy) uploadPage.message = ""
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
                 EnterKey.onClicked: tagsField.forceActiveFocus()
             }
@@ -148,6 +161,7 @@ Page {
                 inputMethodHints: Qt.ImhNoAutoUppercase
                 label: "Tags, separated by commas (up to 3)"
                 placeholderText: "Tags, e.g. cat, funny"
+                onTextChanged: if (!uploader.busy) uploadPage.message = ""
                 EnterKey.iconSource: "image://theme/icon-m-enter-close"
                 EnterKey.onClicked: focus = false
             }
@@ -183,13 +197,16 @@ Page {
                 wrapMode: Text.Wrap
                 visible: text.length > 0
                 color: uploadPage.posted ? Theme.highlightColor : Theme.errorColor || Theme.highlightColor
-                text: uploadPage.posted ? "Posted to 9GAG." : uploadPage.message
+                text: !uploadPage.posted ? uploadPage.message
+                                         : uploadPage.postedUrl ? "Posted to 9GAG."
+                                         : "Sent to 9GAG, which hasn't confirmed the post yet. Look for it on your profile later; don't send it again."
             }
 
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 visible: !uploadPage.posted
-                enabled: appSettings.loggedIn && (uploader.busy || uploadPage.problem.length === 0)
+                // once the post is being created, stopping could still leave a post
+                enabled: appSettings.loggedIn && (uploader.busy ? uploader.canCancel : uploadPage.problem.length === 0)
                 text: uploader.busy ? "Stop" : "Post"
                 onClicked: {
                     if (uploader.busy) {

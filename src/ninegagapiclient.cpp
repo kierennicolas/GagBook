@@ -357,7 +357,13 @@ QString NineGagApiClient::accountId() const
 
 bool NineGagApiClient::canComment() const
 {
-    if (m_isGuestSession || !sessionIsValid() || m_commentAuth.isEmpty())
+    // the comment service doesn't use the API token, so an expired token doesn't matter
+    return isUserLoggedIn() && (!m_commentAuth.isEmpty() || canRenewUserSession());
+}
+
+bool NineGagApiClient::hasValidCommentKey() const
+{
+    if (m_commentAuth.isEmpty() || !isUserLoggedIn())
         return false;
     return m_commentAuthExpiry == 0 || currentSecs() < m_commentAuthExpiry;
 }

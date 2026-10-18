@@ -384,6 +384,8 @@ QList<CommentObject *> NineGagApiRequest::parseChildComments(const QJsonArray &j
 
         // text: convert included entity numbers, smilies etc.
         QString tmpStr = commentMap.value("mediaText").toString();
+        if (tmpStr.isEmpty())
+            tmpStr = commentMap.value("text").toString();
         QTextDocument tmpTextDoc;
         tmpTextDoc.setHtml(tmpStr); // TODO this removes line breaks
         comment->setText(tmpTextDoc.toPlainText());

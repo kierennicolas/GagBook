@@ -31,6 +31,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 
 #include "gagrequest.h"
 
@@ -38,6 +39,7 @@ class NetworkManager;
 class NineGagApiClient;
 class AppSettings;
 class QNetworkReply;
+class QTimer;
 
 /*! Handle login and hold other global instance class
 
@@ -67,10 +69,11 @@ class GagBookManager : public QObject
     Q_PROPERTY(QString userId READ userId NOTIFY userNameChanged)
     Q_PROPERTY(QString accountId READ accountId NOTIFY userNameChanged)
 
-    /*! True if comments can be written (logged in, with the comment key from the login). */
+    /*! True if comments can be written (logged in, with the comment key from the login or a
+        stored login that can get one). */
     Q_PROPERTY(bool canComment READ canComment NOTIFY userNameChanged)
 
-    /*! True while a comment is being posted or deleted. */
+    /*! True while comment requests are being sent or wait to be sent. */
     Q_PROPERTY(bool commentBusy READ isCommentBusy NOTIFY commentBusyChanged)
 
 public:
@@ -113,11 +116,14 @@ public:
     Q_INVOKABLE void suggestTags(const QString &text);
 
     /*! Post \p text as a comment on the post \p postUrl, as a reply to \p parentId if not
-        empty. Answers with commentAdded() or commentFailure(). */
-    Q_INVOKABLE void addComment(const QString &postUrl, const QString &text, const QString &parentId);
+        empty. Requests are sent one after another. Returns the request's id, which
+        commentAdded() or commentFailure() carry, or 0 if it can't be sent (commentFailure()
+        has been emitted already, with id 0). */
+    Q_INVOKABLE int addComment(const QString &postUrl, const QString &text, const QString &parentId);
 
-    /*! Delete the own comment \p commentId. Answers with commentDeleted() or commentFailure(). */
-    Q_INVOKABLE void deleteComment(const QString &postUrl, const QString &commentId);
+    /*! Delete the own comment \p commentId. Like addComment(), answers with commentDeleted()
+        or commentFailure(). */
+    Q_INVOKABLE int deleteComment(const QString &postUrl, const QString &commentId);
 
     /*! True if a comment author with these ids is the logged in user. */
     Q_INVOKABLE bool isOwnUser(const QString &userId, const QString &accountId) const;
@@ -129,6 +135,10 @@ private:
     void sendPendingRequests();
     void sendSectionsRequest();
     void sendSuggestRequest();
+    int queueCommentRequest(bool isDelete, const QString &postUrl, const QString &text,
+                            const QString &id);
+    void sendNextCommentRequest();
+    void failCommentRequests(const QString &message);
 
 signals:
     void busyChanged();
@@ -154,12 +164,14 @@ signals:
     void tagSuggestions(const QString &text, const QVariantList &tags);
 
     void commentBusyChanged();
-    /*! Emit when a comment was posted on \p postUrl. */
-    void commentAdded(const QString &postUrl);
+    /*! Emit when a comment was posted on \p postUrl, as a reply to \p parentId if not empty.
+        \p comment is the comment as the comment service returned it, completed with the
+        user's name, the time and the text if it left them out; empty if it sent none. */
+    void commentAdded(const QString &postUrl, const QString &parentId, const QVariantMap &comment, int requestId);
     /*! Emit when the comment \p commentId was deleted. */
-    void commentDeleted(const QString &postUrl, const QString &commentId);
+    void commentDeleted(const QString &postUrl, const QString &commentId, int requestId);
     /*! Emit when posting or deleting a comment failed; \p message should show to user. */
-    void commentFailure(const QString &message);
+    void commentFailure(const QString &message, int requestId);
 
 private slots:
     void onUserLoginFinished(bool success, const QString &errorMessage);
@@ -169,6 +181,7 @@ private slots:
     void onSectionsReplyFinished();
     void onSuggestReplyFinished();
     void onCommentReplyFinished();
+    void onCommentTimeout();
 
 private:
     bool m_isBusy;
@@ -184,6 +197,20 @@ private:
     bool m_suggestWanted;
     QNetworkReply *m_suggestReply;
     QNetworkReply *m_commentReply;
+
+    struct CommentRequest {
+        int id;
+        bool isDelete;
+        QString postUrl;
+        QString text;       // comment text
+        QString targetId;   // the parent (reply) or the comment to delete
+    };
+    QList<CommentRequest> m_commentQueue;
+    CommentRequest m_currentComment;
+    QTimer *m_commentTimer;     // Qt 5.6 has no transfer timeout
+    int m_lastCommentRequestId;
+    bool m_commentRenewing;     // renewing the login for a comment key
+    bool m_commentRenewed;      // ... done once for the queued requests
 };
 
 #endif // GAGBOOKMANAGER_H

@@ -77,8 +77,13 @@ public:
     /*! Ids of the logged in user (as in the login answer), to recognise own comments. */
     QString userId() const;
     QString accountId() const;
-    /*! True if a user is logged in and the comment key from the login is still valid. */
+    /*! True if a user is logged in with a comment key from the login, or with a stored login
+        that can get one (sessions from before GagBook 1.7 have no key). */
     bool canComment() const;
+    /*! True if the comment key from the login exists and hasn't expired. */
+    bool hasValidCommentKey() const;
+    /*! True if the login was stored ("Stay logged in"), so the session can be renewed. */
+    bool canRenewUserSession() const;
 
     /*! Make sure a valid session exists. Renews an expired user session if the login was
         stored, otherwise requests a guest token. Emits sessionReady() or sessionFailed().
@@ -165,7 +170,6 @@ private:
     static QByteArray formBody(const ArgList &args);
     QNetworkReply *request(QNetworkRequest netReq);
 
-    bool canRenewUserSession() const;
     void startSessionRequest(SessionRequestType type);
     void finishSessionRequest(SessionRequestType type, int httpStatus, int networkError,
                               const QByteArray &body, bool timedOut, const ResponseInfo &info);

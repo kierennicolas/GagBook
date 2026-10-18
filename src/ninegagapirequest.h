@@ -43,6 +43,11 @@ public:
     /*! \p apiClient is owned by the caller and must outlive this object. */
     NineGagApiRequest(NetworkManager *networkManager, NineGagApiClient *apiClient, QObject *parent = 0);
 
+    /*! Comment objects for the comments in \p jsonCommentsArray (in the comment service's
+        format), children of \p parentComment; their replies are parsed too. */
+    static QList<CommentObject *> parseChildComments(const QJsonArray &jsonCommentsArray,
+                                                     CommentObject *parentComment);
+
 protected:
     void startGagsRequest();
     QNetworkReply *fetchGagsImpl(const GagFeed &feed, const QString &lastId, int fromIndex);
@@ -60,10 +65,8 @@ private:
     bool m_waitingForSession;
     bool m_retriedAfterAuthError;
 
-    QList<CommentObject *> parseChildComments(const QJsonArray &jsonCommentsArray,
-                                              CommentObject *parentComment);
-    CommentMediaObject parseCommentMedia(const QJsonObject &jsonMedia, ContentType mediaType);
-    UserObject parseUser(const QJsonObject &jsonUser);
+    static CommentMediaObject parseCommentMedia(const QJsonObject &jsonMedia, ContentType mediaType);
+    static UserObject parseUser(const QJsonObject &jsonUser);
 };
 
 #endif // NINEGAGAPIREQUEST_H

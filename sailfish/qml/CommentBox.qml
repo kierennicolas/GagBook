@@ -41,10 +41,11 @@ Column {
     property string replyToName: ""
     // false on the answers page, where every comment is a reply to the same thread
     property bool canStopReplying: true
-    property bool _sending: false
-
-    // a comment (parentId empty) or a reply to parentId was posted
-    signal posted(string parentId)
+    // the text field scrolls instead of growing past this
+    property real maxTextHeight: Screen.height / 4
+    readonly property bool _sending: _requestId > 0
+    // the comment request this box sent (see GagBookManager::addComment)
+    property int _requestId: 0
 
     // reply to the thread threadId; mention puts "@name" in front, as 9GAG does for replies to replies
     function replyTo(threadId, name, mention) {
@@ -63,32 +64,31 @@ Column {
 
     function send() {
         var text = textArea.text.trim();
-        if (text.length === 0 || gagbookManager.commentBusy)
+        if (text.length === 0 || _sending)
             return;
-        _sending = true;
-        gagbookManager.addComment(postUrl, text, parentId);
-        // no request was sent (failures are answered right away)
-        if (!gagbookManager.commentBusy)
-            _sending = false;
+        // 0 if it can't be sent; main.qml shows why
+        _requestId = gagbookManager.addComment(postUrl, text, parentId);
     }
 
     width: parent ? parent.width : 0
 
+    // the comment pages put the new comment into the list; main.qml shows the messages
     Connections {
         target: gagbookManager
         onCommentAdded: {
-            if (!commentBox._sending)
+            if (requestId !== commentBox._requestId)
                 return;
-            commentBox._sending = false;
-            var parent = commentBox.parentId;
+            commentBox._requestId = 0;
             textArea.text = "";
             textArea.focus = false;
             if (commentBox.canStopReplying)
                 commentBox.stopReplying();
-            commentBox.posted(parent);
         }
-        // the message is shown by main.qml; the text stays so it can be sent again
-        onCommentFailure: commentBox._sending = false
+        // the text stays so it can be sent again
+        onCommentFailure: {
+            if (requestId === commentBox._requestId)
+                commentBox._requestId = 0;
+        }
     }
 
     Separator {
@@ -148,6 +148,7 @@ Column {
     TextArea {
         id: textArea
         width: parent.width
+        height: Math.min(implicitHeight, Math.max(Theme.itemSizeLarge, commentBox.maxTextHeight))
         visible: gagbookManager.canComment
         enabled: !commentBox._sending
         placeholderText: commentBox.parentId.length > 0 ? qsTr("Write a reply") : qsTr("Write a comment")
@@ -168,7 +169,7 @@ Column {
         Button {
             id: sendButton
             anchors { right: parent.right; rightMargin: Theme.horizontalPageMargin; top: parent.top }
-            enabled: textArea.text.trim().length > 0 && !gagbookManager.commentBusy
+            enabled: textArea.text.trim().length > 0 && !commentBox._sending
             text: commentBox.parentId.length > 0 ? qsTr("Reply") : qsTr("Send")
             onClicked: commentBox.send()
         }

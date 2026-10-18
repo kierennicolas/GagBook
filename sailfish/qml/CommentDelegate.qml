@@ -52,10 +52,11 @@ ListItem {
             visible: commentItem.isOwn
             onClicked: {
                 // the item can be gone when the remorse timer ends; keep what the request needs
+                var manager = gagbookManager;
                 var postUrl = commentBox.postUrl;
                 var commentId = model.id;
                 commentItem.remorseAction(qsTr("Deleting"), function() {
-                    gagbookManager.deleteComment(postUrl, commentId);
+                    manager.deleteComment(postUrl, commentId);
                 });
             }
         }
