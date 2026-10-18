@@ -70,6 +70,7 @@ CommentModel::CommentModel(QObject *parent)
     m_roleNames[ChildCommentCountRole] = "childCommentCount";
     m_roleNames[IsOriginalPosterRole] = "isOriginalPoster";
     m_roleNames[UserRole] = "user";
+    m_roleNames[ThreadIdRole] = "threadId";
 }
 
 /*!
@@ -189,6 +190,11 @@ QVariant CommentModel::data(const QModelIndex &index, int role) const
             }}
         case UserRole:
             return QVariant::fromValue(comment->user());
+        case ThreadIdRole: {
+            // replies are always added to the thread's top-level comment
+            CommentObject *parent = comment->parentComment();
+            return (parent == 0 || parent->isRootComment()) ? comment->id() : parent->id();
+        }
         default:
             //qWarning() << "CommentModel::data(): Trying to retrieve data with the invalid role " << role << "!";
             return QVariant();

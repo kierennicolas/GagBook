@@ -32,6 +32,7 @@
 #include <QList>
 #include <QPair>
 #include <QString>
+#include <QStringList>
 #include <QNetworkRequest>
 
 #include "networkmanager.h"
@@ -73,6 +74,11 @@ public:
     bool isUserLoggedIn() const;
     /*! The 9GAG user name of the logged in user, or an empty string. */
     QString userDisplayName() const;
+    /*! Ids of the logged in user (as in the login answer), to recognise own comments. */
+    QString userId() const;
+    QString accountId() const;
+    /*! True if a user is logged in and the comment key from the login is still valid. */
+    bool canComment() const;
 
     /*! Make sure a valid session exists. Renews an expired user session if the login was
         stored, otherwise requests a guest token. Emits sessionReady() or sessionFailed().
@@ -94,6 +100,21 @@ public:
                                SortOrder sortOrder, SortDirection sortDirection,
                                const QString &auth = QString());
     QNetworkReply *retrieveSections();
+
+    /*! Posts a comment on the post with \p postUrl (as the API returns it, e.g.
+        'http://9gag.com/gag/abc'), as a reply to \p parentId if not empty. */
+    QNetworkReply *addComment(const QString &postUrl, const QString &text, const QString &parentId);
+    /*! Deletes the own comment \p commentId of the post with \p postUrl. */
+    QNetworkReply *deleteComment(const QString &postUrl, const QString &commentId);
+
+    /*! A new id for an upload, built like the app does: '<userId>_<ms since epoch>'. */
+    QString newUploadId() const;
+    /*! Upload step 1: the image. Returns 0 if the file can't be read. */
+    QNetworkReply *uploadImage(const QString &uploadId, const QString &filePath);
+    /*! Upload step 2: title, tags and the sensitive flag. */
+    QNetworkReply *uploadMeta(const QString &uploadId, const QString &title, const QStringList &tags, bool nsfw);
+    /*! Upload step 3: create the post. */
+    QNetworkReply *triggerPostCreation(const QString &uploadId);
 
     /*! Returns an error message if \p root is an API error response, otherwise an empty string. */
     static QString apiErrorMessage(const QJsonObject &root);
@@ -139,6 +160,9 @@ private:
     QByteArray createRequestSig(const QByteArray &timestamp) const;
     QUrl apiUrl(const QByteArray &path, const ArgList &args = ArgList()) const;
     QNetworkRequest apiRequest(const QUrl &url, const QByteArray &token) const;
+    QNetworkRequest commentRequest(const QUrl &url) const;
+    QNetworkReply *postSubmitForm(const ArgList &args);
+    static QByteArray formBody(const ArgList &args);
     QNetworkReply *request(QNetworkRequest netReq);
 
     bool canRenewUserSession() const;
@@ -157,6 +181,10 @@ private:
     qint64 m_tokenExpiry;           // seconds since epoch
     bool m_isGuestSession;
     QString m_userName;
+    QString m_userId;
+    QString m_accountId;
+    QByteArray m_commentAuth;       // 'commentAuth.authHash' of the login answer
+    qint64 m_commentAuthExpiry;     // seconds since epoch, 0 if unknown
 
     QNetworkReply *m_sessionReply;
     SessionRequestType m_sessionRequestType;

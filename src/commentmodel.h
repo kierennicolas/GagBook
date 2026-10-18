@@ -62,7 +62,8 @@ public:
         UpvotesRole,
         ChildCommentCountRole,
         IsOriginalPosterRole,
-        UserRole
+        UserRole,
+        ThreadIdRole    //!< id of the top-level comment of the thread, the parent for replies
     };
 
     enum LoadingStatus {
