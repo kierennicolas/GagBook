@@ -29,6 +29,9 @@
 #include <QNetworkReply>
 #include <QDateTime>
 #include <QSettings>
+#include <QFile>
+#include <QFileInfo>
+#include <QHttpMultiPart>
 #include <QTimer>
 #include <QUrlQuery>
 #include <QUuid>
@@ -58,7 +61,11 @@ const QByteArray API_URL = GAGBOOK_TEST_API_URL;     // only for tests against a
 #else
 const QByteArray API_URL = "https://api.9gag.com";
 #endif
+#ifdef GAGBOOK_TEST_COMMENT_URL
+const QByteArray COMMENT_URL = GAGBOOK_TEST_COMMENT_URL;  // only for tests against a mock server
+#else
 const QByteArray COMMENT_URL = "https://comment.9gag.com";
+#endif
 const QByteArray COMMENT_URL_CDN = "https://comment-cdn.9gag.com";
 const QByteArray NOTIFY_URL = "https://notify.9gag.com";
 const QByteArray ADMIN_URL = "https://admin.9gag.com";
@@ -75,6 +82,8 @@ const QByteArray COMMENT_PATH_CDN = "/v1/cacheable/comment-list.json";
 const QByteArray COMMENTINFO_PATH = "/v1/commentInfo.json";
 const QByteArray COMMENTSDATA_PATH = "/v1/commentsData.json";
 const QByteArray TOPCOMMENTS_PATH = "/v1/topComments.json";
+const QByteArray COMMENT_ADD_PATH = "/v1/comment.json";     // POST form; DELETE '/v1/comment.json/<id>'
+const QByteArray POST_SUBMIT_PATH = "/v2/post-submit";      // steps imageData, metaData, triggerCreation
 
 // Defining App constants:
 const QByteArray APP_ID = "com.ninegag.android.app";
@@ -112,6 +121,10 @@ const QString KEY_TOKEN_EXPIRY = QStringLiteral("tokenExpiry");
 const QString KEY_USER_NAME = QStringLiteral("userName");
 const QString KEY_LOGIN_NAME = QStringLiteral("loginName");
 const QString KEY_PASSWORD_HASH = QStringLiteral("passwordHash");
+const QString KEY_USER_ID = QStringLiteral("userId");
+const QString KEY_ACCOUNT_ID = QStringLiteral("accountId");
+const QString KEY_COMMENT_AUTH = QStringLiteral("commentAuth");
+const QString KEY_COMMENT_AUTH_EXPIRY = QStringLiteral("commentAuthExpiry");
 
 namespace {
 
@@ -150,7 +163,7 @@ qint64 tokenExpiryFromResponse(const QJsonObject &data, qint64 now)
  * \param parent The parent object.
  */
 NineGagApiClient::NineGagApiClient(NetworkManager *netMan, QObject *parent) :
-    QObject(parent), m_netMan(netMan), m_tokenExpiry(0), m_isGuestSession(true),
+    QObject(parent), m_netMan(netMan), m_tokenExpiry(0), m_isGuestSession(true), m_commentAuthExpiry(0),
     m_sessionReply(0), m_sessionRequestType(GuestRequest), m_sessionTimer(new QTimer(this)),
     m_rememberLogin(false)
 {
@@ -330,6 +343,23 @@ bool NineGagApiClient::isUserLoggedIn() const
 QString NineGagApiClient::userDisplayName() const
 {
     return (m_isGuestSession && !canRenewUserSession()) ? QString() : m_userName;
+}
+
+QString NineGagApiClient::userId() const
+{
+    return userDisplayName().isEmpty() ? QString() : m_userId;
+}
+
+QString NineGagApiClient::accountId() const
+{
+    return userDisplayName().isEmpty() ? QString() : m_accountId;
+}
+
+bool NineGagApiClient::canComment() const
+{
+    if (m_isGuestSession || !sessionIsValid() || m_commentAuth.isEmpty())
+        return false;
+    return m_commentAuthExpiry == 0 || currentSecs() < m_commentAuthExpiry;
 }
 
 bool NineGagApiClient::canRenewUserSession() const
@@ -560,6 +590,16 @@ void NineGagApiClient::finishSessionRequest(SessionRequestType type, int httpSta
                 userName = m_loginName;
 
             m_userName = userName;
+            m_userId = user.value(QStringLiteral("userId")).toVariant().toString();
+            m_accountId = user.value(QStringLiteral("accountId")).toVariant().toString();
+
+            // the key the comment service wants as 'auth' (commentAuth: type, authHash, expiryTs)
+            const QJsonObject commentAuth = data.value(QStringLiteral("commentAuth")).toObject();
+            m_commentAuth = commentAuth.value(QStringLiteral("authHash")).toString().toUtf8();
+            m_commentAuthExpiry = jsonToInt64(commentAuth.value(QStringLiteral("expiryTs")));
+            if (m_commentAuthExpiry > currentSecs() * 100)     // milliseconds
+                m_commentAuthExpiry /= 1000;
+
             setSession(token, tokenExpiryFromResponse(data, currentSecs()), false);
             saveUserSession();
 
@@ -607,12 +647,20 @@ void NineGagApiClient::clearUserSession(bool clearStoredLogin)
         setSession(QByteArray(), 0, true);
 
     m_userName.clear();
+    m_userId.clear();
+    m_accountId.clear();
+    m_commentAuth.clear();
+    m_commentAuthExpiry = 0;
 
     QSettings settings;
     settings.beginGroup(SETTINGS_GROUP);
     settings.remove(KEY_USER_TOKEN);
     settings.remove(KEY_TOKEN_EXPIRY);
     settings.remove(KEY_USER_NAME);
+    settings.remove(KEY_USER_ID);
+    settings.remove(KEY_ACCOUNT_ID);
+    settings.remove(KEY_COMMENT_AUTH);
+    settings.remove(KEY_COMMENT_AUTH_EXPIRY);
 
     if (clearStoredLogin) {
         m_loginName.clear();
@@ -649,13 +697,16 @@ void NineGagApiClient::loadStoredSession()
     if (token.isEmpty())
         return;
 
-    if (expiry > currentSecs()) {
+    if (expiry > currentSecs() || m_rememberLogin) {
         m_userName = settings.value(KEY_USER_NAME).toString();
-        setSession(token, expiry, false);
-    }
-    else if (m_rememberLogin) {
-        // expired, but it can be renewed with the stored login
-        m_userName = settings.value(KEY_USER_NAME).toString();
+        m_userId = settings.value(KEY_USER_ID).toString();
+        m_accountId = settings.value(KEY_ACCOUNT_ID).toString();
+        m_commentAuth = settings.value(KEY_COMMENT_AUTH).toByteArray();
+        m_commentAuthExpiry = settings.value(KEY_COMMENT_AUTH_EXPIRY).toLongLong();
+
+        if (expiry > currentSecs())
+            setSession(token, expiry, false);
+        // else: expired, but it can be renewed with the stored login
     }
     else {
         // expired and can't be renewed
@@ -672,6 +723,10 @@ void NineGagApiClient::saveUserSession() const
     settings.setValue(KEY_USER_TOKEN, m_appToken);
     settings.setValue(KEY_TOKEN_EXPIRY, m_tokenExpiry);
     settings.setValue(KEY_USER_NAME, m_userName);
+    settings.setValue(KEY_USER_ID, m_userId);
+    settings.setValue(KEY_ACCOUNT_ID, m_accountId);
+    settings.setValue(KEY_COMMENT_AUTH, m_commentAuth);
+    settings.setValue(KEY_COMMENT_AUTH_EXPIRY, m_commentAuthExpiry);
 
     if (m_rememberLogin) {
         settings.setValue(KEY_LOGIN_NAME, m_loginName);
@@ -845,4 +900,149 @@ QNetworkReply *NineGagApiClient::retrieveSections()
     args << qMakePair(QStringLiteral("entryTypes"), QStringLiteral("animated,photo,video,article"));
 
     return this->request(apiRequest(apiUrl(SECTIONS_PATH, args), m_appToken));
+}
+
+/*!
+ * \brief NineGagApiClient::formBody Encodes \p args as application/x-www-form-urlencoded.
+ *  Every reserved character is percent-encoded, so a '+' or '&' in a comment stays as typed.
+ */
+QByteArray NineGagApiClient::formBody(const ArgList &args)
+{
+    QByteArray body;
+    for (int i = 0; i < args.size(); ++i) {
+        if (i > 0)
+            body.append('&');
+        body.append(QUrl::toPercentEncoding(args.at(i).first));
+        body.append('=');
+        body.append(QUrl::toPercentEncoding(args.at(i).second));
+    }
+    return body;
+}
+
+/*!
+ * \brief NineGagApiClient::commentRequest A request to comment.9gag.com. The comment service
+ *  takes the app identity headers but no request signature (9GAG app 8.24.7).
+ */
+QNetworkRequest NineGagApiClient::commentRequest(const QUrl &url) const
+{
+    QNetworkRequest netReq(url);
+    netReq.setRawHeader("X-Package-ID", APP_ID);
+    netReq.setRawHeader("X-Package-Version", APP_VERSION_CODE);
+    netReq.setRawHeader("X-Device-UUID", m_deviceUUID);
+    netReq.setRawHeader("User-Agent", APP_USER_AGENT);
+    netReq.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+    netReq.setAttribute(QNetworkRequest::CacheSaveControlAttribute, false);
+    return netReq;
+}
+
+QNetworkReply *NineGagApiClient::addComment(const QString &postUrl, const QString &text, const QString &parentId)
+{
+    // the fields the app's AddCommentTask sends
+    ArgList args;
+    args << qMakePair(QStringLiteral("auth"), QString::fromLatin1(m_commentAuth));
+    args << qMakePair(QStringLiteral("appId"), QString::fromLatin1(COMMENT_ID_CDN));
+    args << qMakePair(QStringLiteral("url"), postUrl);
+    args << qMakePair(QStringLiteral("text"), text);
+    args << qMakePair(QStringLiteral("isAnonymous"), QString());
+    if (!parentId.isEmpty())
+        args << qMakePair(QStringLiteral("parent"), parentId);
+    args << qMakePair(QStringLiteral("follow"), QStringLiteral("0"));
+    args << qMakePair(QStringLiteral("replyThreadOnly"), QStringLiteral("0"));
+
+    QNetworkRequest netReq = commentRequest(QUrl(QString::fromLatin1(COMMENT_URL + COMMENT_ADD_PATH)));
+    netReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+    return m_netMan->createPostRequest(netReq, formBody(args));
+}
+
+QNetworkReply *NineGagApiClient::deleteComment(const QString &postUrl, const QString &commentId)
+{
+    // the app sends these as headers on the DELETE request
+    QNetworkRequest netReq = commentRequest(QUrl(QString::fromLatin1(COMMENT_URL + COMMENT_ADD_PATH) + "/"
+                                                 + QString::fromLatin1(QUrl::toPercentEncoding(commentId))));
+    netReq.setRawHeader("auth", m_commentAuth);
+    netReq.setRawHeader("appId", COMMENT_ID_CDN);
+    netReq.setRawHeader("url", postUrl.toUtf8());
+    return m_netMan->createDeleteRequest(netReq);
+}
+
+QString NineGagApiClient::newUploadId() const
+{
+    return m_userId + "_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+}
+
+/*!
+ * \brief NineGagApiClient::postSubmitForm Sends one form step to /v2/post-submit.
+ */
+QNetworkReply *NineGagApiClient::postSubmitForm(const ArgList &args)
+{
+    QNetworkRequest netReq = apiRequest(QUrl::fromEncoded(API_URL + POST_SUBMIT_PATH), m_appToken);
+    netReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+    return m_netMan->createPostRequest(netReq, formBody(args));
+}
+
+QNetworkReply *NineGagApiClient::uploadImage(const QString &uploadId, const QString &filePath)
+{
+    QFile *file = new QFile(filePath);
+    if (!file->open(QIODevice::ReadOnly)) {
+        delete file;
+        return 0;
+    }
+
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    QByteArray contentType = "image/jpeg";
+    if (suffix == QLatin1String("png"))
+        contentType = "image/png";
+    else if (suffix == QLatin1String("gif"))
+        contentType = "image/gif";
+    else if (suffix == QLatin1String("webp"))
+        contentType = "image/webp";
+
+    QHttpMultiPart *multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+
+    QHttpPart imagePart;
+    imagePart.setHeader(QNetworkRequest::ContentTypeHeader, contentType);
+    imagePart.setHeader(QNetworkRequest::ContentDispositionHeader,
+                        QString("form-data; name=\"imageData\"; filename=\"upload.%1\"")
+                        .arg(suffix.isEmpty() ? QStringLiteral("jpg") : suffix));
+    imagePart.setBodyDevice(file);
+    file->setParent(multiPart);     // deleted with the multipart
+    multiPart->append(imagePart);
+
+    const QPair<QString, QString> fields[] = {
+        qMakePair(QStringLiteral("step"), QStringLiteral("imageData")),
+        qMakePair(QStringLiteral("uploadId"), uploadId)
+    };
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
+        QHttpPart part;
+        part.setHeader(QNetworkRequest::ContentDispositionHeader,
+                       QString("form-data; name=\"%1\"").arg(fields[i].first));
+        part.setBody(fields[i].second.toUtf8());
+        multiPart->append(part);
+    }
+
+    QNetworkRequest netReq = apiRequest(QUrl::fromEncoded(API_URL + POST_SUBMIT_PATH), m_appToken);
+    netReq.setHeader(QNetworkRequest::ContentTypeHeader, QVariant());   // set by QHttpMultiPart
+    return m_netMan->createPostRequest(netReq, multiPart);
+}
+
+QNetworkReply *NineGagApiClient::uploadMeta(const QString &uploadId, const QString &title,
+                                            const QStringList &tags, bool nsfw)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("step"), QStringLiteral("metaData"));
+    args << qMakePair(QStringLiteral("uploadId"), uploadId);
+    args << qMakePair(QStringLiteral("moderate"), QStringLiteral("1"));
+    args << qMakePair(QStringLiteral("title"), title);
+    args << qMakePair(QStringLiteral("isNSFW"), nsfw ? QStringLiteral("1") : QStringLiteral("0"));
+    args << qMakePair(QStringLiteral("tags"), tags.join(QStringLiteral(",")));
+    return postSubmitForm(args);
+}
+
+QNetworkReply *NineGagApiClient::triggerPostCreation(const QString &uploadId)
+{
+    ArgList args;
+    args << qMakePair(QStringLiteral("step"), QStringLiteral("triggerCreation"));
+    args << qMakePair(QStringLiteral("uploadId"), uploadId);
+    args << qMakePair(QStringLiteral("moderate"), QStringLiteral("1"));
+    return postSubmitForm(args);
 }

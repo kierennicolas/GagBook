@@ -37,8 +37,28 @@ ListItem {
     property string timestamp: model.timestamp
     property var user: model.user
     property var media: model.media
+    // written by the logged in user, so it can be deleted
+    readonly property bool isOwn: gagbookManager.canComment && gagbookManager.isOwnUser(user.userId(), user.accountId())
 
     menu: ContextMenu {
+        MenuItem {
+            text: qsTr("Reply")
+            visible: gagbookManager.canComment
+            // replies go to the thread's first comment; answering a reply mentions its author
+            onClicked: commentBox.replyTo(model.threadId, commentItem.user.name(), model.threadId !== model.id)
+        }
+        MenuItem {
+            text: qsTr("Delete")
+            visible: commentItem.isOwn
+            onClicked: {
+                // the item can be gone when the remorse timer ends; keep what the request needs
+                var postUrl = commentBox.postUrl;
+                var commentId = model.id;
+                commentItem.remorseAction(qsTr("Deleting"), function() {
+                    gagbookManager.deleteComment(postUrl, commentId);
+                });
+            }
+        }
         MenuItem {
             //: Puts the comment text into the Clipboard
             text: qsTr("Copy text")
@@ -266,7 +286,10 @@ ListItem {
                         pageStack.push(Qt.resolvedUrl("CommentsAnswersPage.qml"), {
                                            commentModel: commentModel,
                                            parentIndex: index,
-                                           commentsCount: model.childCommentCount
+                                           commentsCount: model.childCommentCount,
+                                           postUrl: commentBox.postUrl,
+                                           parentId: model.id,
+                                           parentName: commentItem.user.name()
                                        })
                     }
                 }

@@ -29,6 +29,7 @@ HEADERS += \
     ../src/commentobject.h \
     ../src/commentmediaobject.h \
     ../src/userobject.h \
+    ../src/postuploader.h \
     ../src/networkaccessmanagerfactory.h
 
 SOURCES += main.cpp \
@@ -50,6 +51,7 @@ SOURCES += main.cpp \
     ../src/commentobject.cpp \
     ../src/commentmediaobject.cpp \
     ../src/userobject.cpp \
+    ../src/postuploader.cpp \
     ../src/networkaccessmanagerfactory.cpp
 
 DISTFILES += \
@@ -68,6 +70,8 @@ DISTFILES += \
     qml/MainPage.qml \
     qml/OpenLinkDialog.qml \
     qml/SearchPage.qml \
+    qml/UploadPage.qml \
+    qml/CommentBox.qml \
     qml/SectionPage.qml \
     qml/SimpleListItem.qml \
     qml/SortPage.qml \

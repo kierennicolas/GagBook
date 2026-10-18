@@ -13,7 +13,7 @@ Name:       harbour-gagbook
 %{!?qtc_make:%define qtc_make make}
 %{?qtc_builddir:%define _builddir %qtc_builddir}
 Summary:    An unofficial client for the 9GAG.com website
-Version:    1.6.1
+Version:    1.7.0
 Release:    1
 Group:      Amusements/Graphics
 License:    BSD

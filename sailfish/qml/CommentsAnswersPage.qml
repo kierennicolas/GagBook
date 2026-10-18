@@ -42,13 +42,18 @@ Page {
     property CommentModel commentModel
     property var parentIndex
     property string commentsCount
+    // the post and the comment whose answers these are
+    property string postUrl
+    property string parentId
+    property string parentName
     property int modelStatus: commentModel.loadingStatus
 
     id: childCommentsPage
 
     SilicaListView {
         id: commentsListView
-        anchors.fill: parent
+        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: commentBox.top }
+        clip: true
         model: visualModel
         spacing: Theme.paddingMedium
 
@@ -150,6 +155,18 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    // every comment here is a reply to the thread's first comment
+    CommentBox {
+        id: commentBox
+        anchors.bottom: parent.bottom
+        postUrl: childCommentsPage.postUrl
+        parentId: childCommentsPage.parentId
+        replyToName: childCommentsPage.parentName
+        canStopReplying: false
+
+        onPosted: commentModel.replyAdded(parentId)
     }
 
     DelegateModel {

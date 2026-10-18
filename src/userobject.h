@@ -51,6 +51,10 @@ public:
     Q_INVOKABLE QString userId() const;
     void setUserId(const QString &id);
 
+    /*! The account id; the comment service sends it next to the user id. */
+    Q_INVOKABLE QString accountId() const;
+    void setAccountId(const QString &id);
+
     Q_INVOKABLE QString emojiStatus() const;
     void setEmojiStatus(const QString &status);
 

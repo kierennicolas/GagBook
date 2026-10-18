@@ -508,7 +508,9 @@ UserObject NineGagApiRequest::parseUser(const QJsonObject &jsonUser)
 {
     UserObject userObj = UserObject();
     userObj.setName(jsonUser.value("displayName").toString());
-    userObj.setUserId(jsonUser.value("userId").toString());
+    // ids can come as numbers or strings
+    userObj.setUserId(jsonUser.value("userId").toVariant().toString());
+    userObj.setAccountId(jsonUser.value("accountId").toVariant().toString());
     userObj.setAvatarUrl(jsonUser.value("avatarUrl").toVariant().toUrl());
     const QString emojiStr = jsonUser.value("emojiStatus").toString();
 

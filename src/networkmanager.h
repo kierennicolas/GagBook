@@ -35,6 +35,7 @@
 class QNetworkAccessManager;
 //class QNetworkRequest;
 class QNetworkReply;
+class QHttpMultiPart;
 class QUrl;
 
 /*! Wrapper for QNetworkAccessManager
@@ -63,6 +64,12 @@ public:
     QNetworkReply *createGetRequest(QNetworkRequest &netRequest);
     /*! Create a POST network request. */
     QNetworkReply *createPostRequest(const QUrl &url, const QByteArray &data);
+    /*! Create a POST network request with a prepared QNetworkRequest (headers are kept). */
+    QNetworkReply *createPostRequest(QNetworkRequest &netRequest, const QByteArray &data);
+    /*! Create a multipart POST network request. The reply takes ownership of \p multiPart. */
+    QNetworkReply *createPostRequest(QNetworkRequest &netRequest, QHttpMultiPart *multiPart);
+    /*! Create a DELETE network request with a prepared QNetworkRequest. */
+    QNetworkReply *createDeleteRequest(QNetworkRequest &netRequest);
 
     /*! Clear all saved cookies. */
     void clearCookies();

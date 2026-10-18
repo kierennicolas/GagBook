@@ -5,6 +5,12 @@
 # * date Author's Name <author's email> version-release
 # - Summary of changes
 
+* Sun Oct 18 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.7.0-1
+- Write comments and replies, below the comment list
+- Delete your own comments from the comment menu (with a moment to undo)
+- Post an image from the phone with a title, tags and the sensitive flag
+- Log out and in again once to write comments: the comment key comes with the login
+
 * Sun Oct 18 2026 Kieren Nicolas <kieren@kierennicolas.com> 1.6.1-1
 - Fix the keyboard closing while typing a tag search
 

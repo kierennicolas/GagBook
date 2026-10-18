@@ -49,6 +49,9 @@ ApplicationWindow {
         onLoginSuccess: infoBanner.alert("Logged in to 9GAG");
         onLoginFailure: infoBanner.alert("Login failed: " + errorMessage);
         onSessionExpired: infoBanner.alert(message);
+        onCommentAdded: infoBanner.alert("Comment posted");
+        onCommentDeleted: infoBanner.alert("Comment deleted");
+        onCommentFailure: infoBanner.alert(message);
     }
 
     // Global busy indicator, it reads the 'busy' property from the current page

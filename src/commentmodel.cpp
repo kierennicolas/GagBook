@@ -70,6 +70,7 @@ CommentModel::CommentModel(QObject *parent)
     m_roleNames[ChildCommentCountRole] = "childCommentCount";
     m_roleNames[IsOriginalPosterRole] = "isOriginalPoster";
     m_roleNames[UserRole] = "user";
+    m_roleNames[ThreadIdRole] = "threadId";
 }
 
 /*!
@@ -189,6 +190,11 @@ QVariant CommentModel::data(const QModelIndex &index, int role) const
             }}
         case UserRole:
             return QVariant::fromValue(comment->user());
+        case ThreadIdRole: {
+            // replies are always added to the thread's top-level comment
+            CommentObject *parent = comment->parentComment();
+            return (parent == 0 || parent->isRootComment()) ? comment->id() : parent->id();
+        }
         default:
             //qWarning() << "CommentModel::data(): Trying to retrieve data with the invalid role " << role << "!";
             return QVariant();
@@ -359,6 +365,67 @@ void CommentModel::refresh(const QModelIndex &parent)
 void CommentModel::downloadMedia(const QModelIndex &index)
 {
     Q_UNUSED(index);
+}
+
+// the index of the comment \p id among the loaded top-level comments and their replies
+QModelIndex CommentModel::indexForId(const QString &id) const
+{
+    if (id.isEmpty())
+        return QModelIndex();
+
+    for (int i = 0; i < m_rootComment->currentChildCount(); ++i) {
+        CommentObject *topLevel = m_rootComment->child(i);
+        if (topLevel->id() == id)
+            return createIndex(i, 0, topLevel);
+
+        for (int j = 0; j < topLevel->currentChildCount(); ++j) {
+            CommentObject *reply = topLevel->child(j);
+            if (reply->id() == id)
+                return createIndex(j, 0, reply);
+        }
+    }
+    return QModelIndex();
+}
+
+void CommentModel::replyAdded(const QString &parentId)
+{
+    const QModelIndex parent = indexForId(parentId);
+    CommentObject *parentComment = parent.isValid() ? commentForIndex(parent) : 0;
+
+    // the thread's replies aren't loaded (or it isn't in the list any more): reload the list,
+    // which brings the thread with its first replies
+    if (parentComment == 0 || parentComment->currentChildCount() == 0) {
+        refresh();
+        return;
+    }
+
+    // the new reply is the last of the thread: count it and load it after the loaded ones
+    parentComment->setTotalChildCount(parentComment->totalChildCount() + 1);
+    setTotalCommentCount(totalCommentCount() + 1);
+    emit dataChanged(parent, parent, QVector<int>() << ChildCommentCountRole);
+    if (canFetchMore(parent))
+        fetchMore(parent);
+}
+
+bool CommentModel::removeCommentById(const QString &commentId)
+{
+    const QModelIndex index = indexForId(commentId);
+    if (!index.isValid())
+        return false;
+
+    const QModelIndex parent = index.parent();
+    CommentObject *parentComment = commentForIndex(parent);
+    removeComment(index);
+
+    // the post's total counts replies too
+    setTotalCommentCount(qMax(0, totalCommentCount() - 1));
+    if (parentComment == m_rootComment) {
+        updateIsEmpty();
+    } else {
+        parentComment->setTotalChildCount(qMax(0, parentComment->totalChildCount() - 1));
+        emit dataChanged(parent, parent, QVector<int>() << ChildCommentCountRole);
+    }
+    return true;
 }
 
 bool CommentModel::canFetchMore(const QModelIndex &parent) const

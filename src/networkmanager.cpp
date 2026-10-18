@@ -30,6 +30,7 @@
 
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QHttpMultiPart>
 #include <QtNetwork/QNetworkCookie>
 
 #include "gagcookiejar.h"
@@ -97,6 +98,23 @@ QNetworkReply *NetworkManager::createPostRequest(const QUrl &url, const QByteArr
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
 
     return m_networkAccessManager->post(request, data);
+}
+
+QNetworkReply *NetworkManager::createPostRequest(QNetworkRequest &netRequest, const QByteArray &data)
+{
+    return m_networkAccessManager->post(netRequest, data);
+}
+
+QNetworkReply *NetworkManager::createPostRequest(QNetworkRequest &netRequest, QHttpMultiPart *multiPart)
+{
+    QNetworkReply *reply = m_networkAccessManager->post(netRequest, multiPart);
+    multiPart->setParent(reply);
+    return reply;
+}
+
+QNetworkReply *NetworkManager::createDeleteRequest(QNetworkRequest &netRequest)
+{
+    return m_networkAccessManager->deleteResource(netRequest);
 }
 
 void NetworkManager::clearCookies()

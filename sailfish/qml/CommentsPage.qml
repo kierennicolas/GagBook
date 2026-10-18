@@ -58,7 +58,8 @@ Page {
 
     SilicaListView {
         id: commentsListView
-        anchors.fill: parent
+        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: commentBox.top }
+        clip: true
         model: visualModel
         spacing: Theme.paddingMedium
         //clip: false  // http://doc.qt.io/qt-5/qtquick-performance.html#clipping
@@ -170,6 +171,33 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    CommentBox {
+        id: commentBox
+        anchors.bottom: parent.bottom
+        postUrl: commentsPage.gagURL.toString()
+
+        onPosted: {
+            if (parentId.length > 0) {
+                commentModel.replyAdded(parentId);
+            } else if (commentModel.sorting !== CommentModel.Fresh) {
+                // newest first, so the new comment is at the top (changing it reloads)
+                sortPage.currentlySelectedIndex = 1;
+                commentModel.sorting = CommentModel.Fresh;
+            } else {
+                commentModel.refresh();
+            }
+        }
+    }
+
+    // this page stays under the answers page, so it also handles deletes made there
+    Connections {
+        target: gagbookManager
+        onCommentDeleted: {
+            if (postUrl === commentBox.postUrl)
+                commentModel.removeCommentById(commentId);
+        }
     }
 
     // Needed to display the hierarchical tree model in QML

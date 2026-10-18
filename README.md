@@ -16,7 +16,8 @@ GagBook is an unofficial Sailfish OS app for the [9GAG.com](https://9gag.com) we
 - View Hot, Trending and Fresh, and all of 9GAG's current interests (Humor, Memes, Gaming, ...)
 - Search tags, with suggestions from 9GAG, and view the posts of any tag
 - Account login with your 9GAG email address (or username) and password
-- View comments of each post
+- View comments of each post, write comments and replies, and delete your own
+- Post an image from the phone, with a title, tags and the sensitive flag
 - Save image and video files
 
 ## Development
@@ -36,6 +37,11 @@ Since version 1.5.0 GagBook logs in through the 9GAG app API (`api.9gag.com/v2/u
 - The API is undocumented, so 9GAG can change or close it at any time.
 
 I will update GagBook to fix bugs and implement new features.
+
+### Comments and posts
+
+- Comments go to 9GAG's comment service with the comment key that comes with the login (`commentAuth`). Sessions from GagBook 1.6 and older don't have it: log out and in again once.
+- Posts are sent in the three steps the 9GAG app uses (`/v2/post-submit`: image, details, creation). 9GAG may review a post before others see it, and refuses posts from accounts that are unverified or too new; GagBook shows 9GAG's reason.
 
 ### Sections and tags
 

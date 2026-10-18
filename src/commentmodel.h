@@ -62,7 +62,8 @@ public:
         UpvotesRole,
         ChildCommentCountRole,
         IsOriginalPosterRole,
-        UserRole
+        UserRole,
+        ThreadIdRole    //!< id of the top-level comment of the thread, the parent for replies
     };
 
     enum LoadingStatus {
@@ -123,6 +124,13 @@ public:
 
     Q_INVOKABLE void downloadMedia(const QModelIndex &index);
 
+    /*! A reply to the comment \p parentId was posted: loads it if the thread's replies are
+        loaded, otherwise reloads the list. */
+    Q_INVOKABLE void replyAdded(const QString &parentId);
+
+    /*! Takes the deleted comment \p commentId out of the list. Returns false if it isn't in it. */
+    Q_INVOKABLE bool removeCommentById(const QString &commentId);
+
 signals:
     void isEmptyChanged(bool value);
     void loadingStatusChanged(LoadingStatus status);
@@ -137,6 +145,7 @@ protected:
     /* Helper methods */
 
     QModelIndex indexForComment(CommentObject *commentObj) const;
+    QModelIndex indexForId(const QString &id) const;
     CommentObject *commentForIndex(const QModelIndex &index) const;
     int rowForComment(CommentObject *commentObj) const;
 

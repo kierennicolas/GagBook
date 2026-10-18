@@ -86,6 +86,11 @@ Page {
                 onClicked: pageStack.push(Qt.resolvedUrl("AppSettingsPage.qml"));
             }
             MenuItem {
+                text: "Post an image"
+                visible: appSettings.loggedIn
+                onClicked: pageStack.push(Qt.resolvedUrl("UploadPage.qml"));
+            }
+            MenuItem {
                 text: "Search tags"
                 onClicked: pageStack.push(Qt.resolvedUrl("SearchPage.qml"), { gagModel: gagModel });
             }

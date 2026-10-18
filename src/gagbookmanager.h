@@ -63,12 +63,26 @@ class GagBookManager : public QObject
     /*! The 9GAG user name of the logged in user, empty if not logged in. */
     Q_PROPERTY(QString userName READ userName NOTIFY userNameChanged)
 
+    /*! Ids of the logged in user, to recognise own comments. */
+    Q_PROPERTY(QString userId READ userId NOTIFY userNameChanged)
+    Q_PROPERTY(QString accountId READ accountId NOTIFY userNameChanged)
+
+    /*! True if comments can be written (logged in, with the comment key from the login). */
+    Q_PROPERTY(bool canComment READ canComment NOTIFY userNameChanged)
+
+    /*! True while a comment is being posted or deleted. */
+    Q_PROPERTY(bool commentBusy READ isCommentBusy NOTIFY commentBusyChanged)
+
 public:
     explicit GagBookManager(QObject *parent = 0);
 
     bool isBusy() const;
     QString downloadCounter() const;
     QString userName() const;
+    QString userId() const;
+    QString accountId() const;
+    bool canComment() const;
+    bool isCommentBusy() const;
 
     /*! Get the global instance of AppSettings. */
     AppSettings *settings() const;
@@ -97,6 +111,16 @@ public:
     /*! Ask 9GAG for tags matching \p text. Answers with tagSuggestions(); a newer call
         replaces an unanswered one. */
     Q_INVOKABLE void suggestTags(const QString &text);
+
+    /*! Post \p text as a comment on the post \p postUrl, as a reply to \p parentId if not
+        empty. Answers with commentAdded() or commentFailure(). */
+    Q_INVOKABLE void addComment(const QString &postUrl, const QString &text, const QString &parentId);
+
+    /*! Delete the own comment \p commentId. Answers with commentDeleted() or commentFailure(). */
+    Q_INVOKABLE void deleteComment(const QString &postUrl, const QString &commentId);
+
+    /*! True if a comment author with these ids is the logged in user. */
+    Q_INVOKABLE bool isOwnUser(const QString &userId, const QString &accountId) const;
 
 private:
     void initGagRequest();
@@ -129,6 +153,14 @@ signals:
         9GAG couldn't be asked. */
     void tagSuggestions(const QString &text, const QVariantList &tags);
 
+    void commentBusyChanged();
+    /*! Emit when a comment was posted on \p postUrl. */
+    void commentAdded(const QString &postUrl);
+    /*! Emit when the comment \p commentId was deleted. */
+    void commentDeleted(const QString &postUrl, const QString &commentId);
+    /*! Emit when posting or deleting a comment failed; \p message should show to user. */
+    void commentFailure(const QString &message);
+
 private slots:
     void onUserLoginFinished(bool success, const QString &errorMessage);
     void onUserSessionEnded(const QString &message);
@@ -136,6 +168,7 @@ private slots:
     void onSessionFailed();
     void onSectionsReplyFinished();
     void onSuggestReplyFinished();
+    void onCommentReplyFinished();
 
 private:
     bool m_isBusy;
@@ -150,6 +183,7 @@ private:
     QString m_suggestText;      // text of the suggestTags() call waiting for a session
     bool m_suggestWanted;
     QNetworkReply *m_suggestReply;
+    QNetworkReply *m_commentReply;
 };
 
 #endif // GAGBOOKMANAGER_H

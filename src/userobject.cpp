@@ -43,6 +43,7 @@ public:
 
     QString name;
     QString userId;
+    QString accountId;
     QString emojiStatus;
     QUrl avatarUrl;
     bool isProUser;
@@ -100,6 +101,16 @@ QString UserObject::userId() const
 void UserObject::setUserId(const QString &id)
 {
     data->userId = id;
+}
+
+QString UserObject::accountId() const
+{
+    return data->accountId;
+}
+
+void UserObject::setAccountId(const QString &id)
+{
+    data->accountId = id;
 }
 
 QString UserObject::emojiStatus() const
